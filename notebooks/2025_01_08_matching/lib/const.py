@@ -1,0 +1,47 @@
+import glob
+import os
+
+BANDS = ["g", "r", "i", "z"]
+TRUTH_BANDS = ["u", "g", "r", "i", "z", "Y", "J",  "H", "Ks"]
+DEEPFIELD_BANDS = ["u", "g", "r", "i", "z", "Y", "J", "H", "K"]
+
+SHEAR_STEPS = [
+    "g1_slice=0.02__g2_slice=0.00__g1_other=0.00__g2_other=0.00__zlow=0.0__zhigh=6.0",
+    "g1_slice=-0.02__g2_slice=0.00__g1_other=0.00__g2_other=0.00__zlow=0.0__zhigh=6.0",
+    "g1_slice=0.02__g2_slice=0.00__g1_other=-0.02__g2_other=0.00__zlow=0.6__zhigh=0.9",
+    "g1_slice=0.02__g2_slice=0.00__g1_other=-0.02__g2_other=0.00__zlow=1.8__zhigh=2.1",
+    "g1_slice=0.02__g2_slice=0.00__g1_other=-0.02__g2_other=0.00__zlow=0.9__zhigh=1.2",
+    "g1_slice=0.02__g2_slice=0.00__g1_other=-0.02__g2_other=0.00__zlow=2.1__zhigh=2.4",
+    "g1_slice=0.02__g2_slice=0.00__g1_other=-0.02__g2_other=0.00__zlow=0.0__zhigh=0.3",
+    "g1_slice=0.02__g2_slice=0.00__g1_other=-0.02__g2_other=0.00__zlow=1.2__zhigh=1.5",
+    "g1_slice=0.02__g2_slice=0.00__g1_other=-0.02__g2_other=0.00__zlow=2.4__zhigh=2.7",
+    "g1_slice=0.02__g2_slice=0.00__g1_other=-0.02__g2_other=0.00__zlow=0.3__zhigh=0.6",
+    "g1_slice=0.02__g2_slice=0.00__g1_other=-0.02__g2_other=0.00__zlow=1.5__zhigh=1.8",
+    "g1_slice=0.02__g2_slice=0.00__g1_other=-0.02__g2_other=0.00__zlow=2.7__zhigh=6.0",
+]
+
+MDET_STEPS = [
+    "noshear",
+    "1p",
+    "1m",
+    "2p",
+    "2m",
+]
+
+DEEPFIELD_CATALOG = "/global/cfs/cdirs/desbalro/DES_DF_COSMOS.fits"
+
+TRUTH_DIR = "/global/cfs/cdirs/desbalro/cosmos_simcat/"
+TRUTH_CATALOGS = {}
+for _truth_file in glob.glob(f"{TRUTH_DIR}/*.fits"):
+    _tilename = _truth_file.split("/")[-1].split("_")[3]
+    TRUTH_CATALOGS[_tilename] = _truth_file
+
+IMSIM_DIR = "/global/cfs/cdirs/des/y6-image-sims/fiducial/"
+IMSIM_CATALOGS = {
+    shear_step: os.path.join(
+        IMSIM_DIR,
+        shear_step,
+        "metadetect_cutsv6_all.h5",
+    )
+    for shear_step in SHEAR_STEPS
+}
