@@ -20,6 +20,17 @@ from pizza_cutter_metadetect.masks import get_slice_bounds
 logger = logging.getLogger(__name__)
 
 
+def parse_shear_arguments(shear_string):
+    return dict(
+        map(
+            lambda x: (x[0], eval(x[1])),
+            map(
+                lambda x: x.split("="),
+                shear_string.split("__")
+            )
+        )
+    )
+
 # thanks @eli
 def extractor(m, poly):
     pixels = poly.get_pixels(nside=m.nside_sparse)
@@ -173,110 +184,3 @@ def read_meds(fname):
             ] = np.nan
 
     return full_image
-
-
-def gather_inputs():
-    inputs = []
-    input_base = Path(os.environ["IMSIM_DATA"]) / "cosmos_simcat"
-    for input_path in input_base.glob("cosmos_simcat_v7_DES[0-9]*[+-][0-9]*_seed[0-9]*.fits"):
-        input_file = input_path.as_posix()
-        logger.info(input_file)
-        inputs.append(input_file)
-
-    return inputs
-
-
-# def gather_sims(imsim_path):
-#     imsim_path = Path(imsim_path)
-#     config_name = imsim_path.name
-#     tile_dirs = imsim_path.glob("*")
-# 
-#     shears = ["plus", "minus"]
-# 
-#     pairs = {}
-#     for tile_dir in tile_dirs:
-#         tile = tile_dir.stem
-#         pairs[tile] = {}
-# 
-#         seed_dirs = tile_dir.glob("*")
-# 
-#         for seed_dir in seed_dirs:
-#             seed = seed_dir.stem
-# 
-#             pairs[tile][seed] = {}
-#             for shear in shears:
-#                 # pairs[tile][run][shear] = {}
-#                 catalog_fname = seed_dir / shear / "des-pizza-slices-y6" / tile / "metadetect" / f"{tile}_metadetect-config_mdetcat_part0000.fits"
-#                 mask_fname = seed_dir / shear / "des-pizza-slices-y6" / tile / "metadetect" / f"{tile}_metadetect-config_mdetcat_part0000-healsparse-mask.hs"
-#                 pizza_slices_dir = seed_dir / shear / "des-pizza-slices-y6"
-# 
-#                 pairs[tile][seed][shear] = {
-#                     "catalog": catalog_fname.as_posix(),
-#                     "mask": mask_fname.as_posix(),
-#                     "pizza_slices_dir": pizza_slices_dir.as_posix(),
-#                 }
-# 
-#                 print(tile, seed, shear)
-# 
-#             exists = [
-#                 (
-#                     os.path.exists(pairs[tile][seed][shear]["catalog"])
-#                     and os.path.exists(pairs[tile][seed][shear]["mask"])
-#                     and os.path.exists(pairs[tile][seed][shear]["pizza_slices_dir"])
-#                 ) for shear in shears
-#             ]
-#             if not functools.reduce(operator.and_, exists):
-#                 print("removing ", tile, seed)
-#                 pairs[tile].pop(seed)
-#                 continue
-# 
-# 
-#     return pairs
-
-# def gather_catalogs(imsim_path):
-#     catalogs = {}
-#     for catalog_file in (imsim_path / "g1_slice=0.02__g2_slice=0.00__g1_other=0.00__g2_other=0.00__zlow=0.0__zhigh=6.0").glob("*"):
-# 
-#         catalogs["plus"] = str(catalog_file)
-# 
-#     for catalog_file in (imsim_path / "g1_slice=-0.02__g2_slice=0.00__g1_other=0.00__g2_other=0.00__zlow=0.0__zhigh=6.0").glob("*"):
-#         catalogs["minus"] = str(catalog_file)
-# 
-#     return catalogs
-def gather_catalogs(imsim_path):
-    catalogs = {}
-    for catalog_file in (imsim_path / "g1_slice=0.02__g2_slice=0.00__g1_other=0.00__g2_other=0.00__zlow=0.0__zhigh=6.0").glob("*"):
-        tilename = catalog_file.name.split("_")[0]
-
-        catalogs[tilename] = {}
-        catalogs[tilename]["plus"] = str(catalog_file)
-
-    for catalog_file in (imsim_path / "g1_slice=-0.02__g2_slice=0.00__g1_other=0.00__g2_other=0.00__zlow=0.0__zhigh=6.0").glob("*"):
-        tilename = catalog_file.name.split("_")[0]
-        catalogs[tilename]["minus"] = str(catalog_file)
-
-    return catalogs
-
-
-def get_levels(hist, percentiles=[0.5]):
-    levels = np.quantile(
-        hist[hist > 0],
-        percentiles,
-    )
-    # levels = np.array([
-    #     np.max(hist[hist < percentile * np.mean(hist[hist > 0])])
-    #     for percentile in percentiles
-    # ])
-
-    logger.info("percentiles:", percentiles)
-    logger.info("levels:", levels)
-
-    return levels
-
-def get_percentile(hist, level):
-
-    percentile = (1 - np.mean(hist[hist > 0] < level)) * 100
-    # percentile = np.sum(hist[hist > level]) / np.sum(hist) * 100
-
-    return percentile
-
