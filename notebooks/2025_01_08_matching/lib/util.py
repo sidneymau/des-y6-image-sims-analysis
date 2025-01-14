@@ -16,8 +16,27 @@ from esutil.pbar import PBar
 from ngmix.medsreaders import NGMixMEDS
 from pizza_cutter_metadetect.masks import get_slice_bounds
 
+from . import const
+
 
 logger = logging.getLogger(__name__)
+
+
+def flux_to_mag(flux):
+    return const.ZEROPOINT - 2.5 * np.log10(flux)
+
+
+def mag_to_flux(mag):
+    return np.power(
+        10,
+        -(mag - const.ZEROPOINT) / 2.5,
+    )
+
+
+def mag_to_flux_with_error(mag, mag_err):
+    _flux = mag_to_flux(mag)
+    _flux_err = np.log(10) / 2.5 * _flux * mag_err
+    return _flux, _flux_err
 
 
 def parse_shear_arguments(shear_string):

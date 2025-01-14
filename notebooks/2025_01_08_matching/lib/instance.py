@@ -10,35 +10,10 @@ import galsim
 import numpy as np
 from sklearn.neighbors import BallTree
 
-from . import util
+from . import const, util
 
 
 logger = logging.getLogger(__name__)
-
-
-SHEAR_STEPS = [
-    'g1_slice=0.02__g2_slice=0.00__g1_other=0.00__g2_other=0.00__zlow=0.0__zhigh=6.0',
-    'g1_slice=-0.02__g2_slice=0.00__g1_other=0.00__g2_other=0.00__zlow=0.0__zhigh=6.0',
-    'g1_slice=0.02__g2_slice=0.00__g1_other=-0.02__g2_other=0.00__zlow=0.6__zhigh=0.9',
-    'g1_slice=0.02__g2_slice=0.00__g1_other=-0.02__g2_other=0.00__zlow=1.8__zhigh=2.1',
-    'g1_slice=0.02__g2_slice=0.00__g1_other=-0.02__g2_other=0.00__zlow=0.9__zhigh=1.2',
-    'g1_slice=0.02__g2_slice=0.00__g1_other=-0.02__g2_other=0.00__zlow=2.1__zhigh=2.4',
-    'g1_slice=0.02__g2_slice=0.00__g1_other=-0.02__g2_other=0.00__zlow=0.0__zhigh=0.3',
-    'g1_slice=0.02__g2_slice=0.00__g1_other=-0.02__g2_other=0.00__zlow=1.2__zhigh=1.5',
-    'g1_slice=0.02__g2_slice=0.00__g1_other=-0.02__g2_other=0.00__zlow=2.4__zhigh=2.7',
-    'g1_slice=0.02__g2_slice=0.00__g1_other=-0.02__g2_other=0.00__zlow=0.3__zhigh=0.6',
-    'g1_slice=0.02__g2_slice=0.00__g1_other=-0.02__g2_other=0.00__zlow=1.5__zhigh=1.8',
-    'g1_slice=0.02__g2_slice=0.00__g1_other=-0.02__g2_other=0.00__zlow=2.7__zhigh=6.0',
-]
-
-BANDS = ["g", "r", "i", "z"]
-
-
-TRUTH_BASE = "/global/cfs/cdirs/desbalro/cosmos_simcat/"
-TRUTH_CATALOGS = {}
-for _truth_file in glob.glob(f"{TRUTH_BASE}/*.fits"):
-    _tilename = _truth_file.split("/")[-1].split("_")[3]
-    TRUTH_CATALOGS[_tilename] = _truth_file
 
 
 def match(
@@ -66,7 +41,7 @@ def match(
         in_tile.shape,
     ).ravel()
 
-    truth_table = fitsio.FITS(TRUTH_CATALOGS[tilename])[1]
+    truth_table = fitsio.FITS(const.TRUTH_CATALOGS[tilename])[1]
 
     observed_table = {
         key: hf_imsim["mdet"][mdet_step][key][in_tile]
@@ -148,7 +123,7 @@ def match(
                             observed_table[f"pgauss_band_flux_err_{band}"][_i]
                         )
                     )
-                    for band in BANDS
+                    for band in const.BANDS
                 ],
                 axis=0
             )

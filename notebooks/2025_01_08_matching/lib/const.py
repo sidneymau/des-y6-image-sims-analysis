@@ -48,3 +48,5 @@ IMSIM_CATALOGS = {
     )
     for shear_step in SHEAR_STEPS
 }
+
+ZEROPOINT = 30

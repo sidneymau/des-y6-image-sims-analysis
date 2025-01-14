@@ -7,20 +7,10 @@ import fitsio
 import numpy as np
 from sklearn.neighbors import KNeighborsRegressor
 
+from . import const, util
+
 
 logger = logging.getLogger(__name__)
-
-BANDS = ["g", "r", "i", "z"]
-DEEPFIELD_BANDS = ["u", "g", "r", "i", "z", "Y", "H", "J", "K"]
-
-TRUTH_DIR = "/global/cfs/cdirs/desbalro/cosmos_simcat/"
-DEEPFIELD_CATALOG = "/global/cfs/cdirs/desbalro/DES_DF_COSMOS.fits"
-
-TRUTH_CATALOGS = {}
-for _truth_file in glob.glob(f"{TRUTH_DIR}/*.fits"):
-    _tilename = _truth_file.split("/")[-1].split("_")[3]
-    TRUTH_CATALOGS[_tilename] = _truth_file
-
 
 # We augment the wide-field catalog (i.e., detections & measurements) by
 # matching to the truth catalog and the deep-field catalog.
@@ -32,29 +22,32 @@ for _truth_file in glob.glob(f"{TRUTH_DIR}/*.fits"):
 #
 
 def get_deepfield_ids():
-    with fitsio.FITS(DEEPFIELD_CATALOG) as fits:
+    with fitsio.FITS(const.DEEPFIELD_CATALOG) as fits:
         deepfield_ids = fits[1]["ID_DES"].read()
 
     return deepfield_ids
 
 def get_deepfield_table():
-    with fitsio.FITS(DEEPFIELD_CATALOG) as fits:
+    with fitsio.FITS(const.DEEPFIELD_CATALOG) as fits:
         _deepfield_table = fits[1].read()
 
     return _deepfield_table
 
-def get_knn(deepfield_table):
+def get_knn():
+    _deepfield_table = get_deepfield_table()
+    
     _table = {}
-    for band in DEEPFIELD_BANDS:
+    for band in const.DEEPFIELD_BANDS:
 
-        _mag = deepfield_table[f"MAG_{band}"]
-        _mag_err = deepfield_table[f"ERR_MAG_{band}"]
+        _mag = _deepfield_table[f"MAG_{band}"]
+        _mag_err = _deepfield_table[f"ERR_MAG_{band}"]
 
-        _flux = np.power(
-            10,
-            -(_mag - 30) / 2.5,
-        )
-        _flux_err = np.log(10) / 2.5 * _flux * _mag_err
+        # _flux = np.power(
+        #     10,
+        #     -(_mag - 30) / 2.5,
+        # )
+        # _flux_err = np.log(10) / 2.5 * _flux * _mag_err
+        _flux, _flux_err = util.mag_to_flux_with_error(_mag, _mag_err)
 
         _table[f"flux_{band}"] = _flux
         _table[f"flux_err_{band}"] = _flux_err
@@ -62,14 +55,14 @@ def get_knn(deepfield_table):
     _X = np.array(
         [
             _table[f"flux_{band}"]
-            for band in DEEPFIELD_BANDS
+            for band in const.DEEPFIELD_BANDS
         ]
     ).T
 
     _y = np.array(
         [
             _table[f"flux_err_{band}"]
-            for band in DEEPFIELD_BANDS
+            for band in const.DEEPFIELD_BANDS
         ]
     ).T
 
