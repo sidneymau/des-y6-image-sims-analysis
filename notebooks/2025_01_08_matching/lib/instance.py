@@ -165,7 +165,7 @@ def match(
         for (_i, _ii) in zip(indices, _min_chi2_indices) if len(_i) > 0
     ])
 
-    assert np.unique(_observed_matched_indices, return_counts=True)[1].max() == 1
+    assert np.unique(_observed_matched_indices, return_counts=True)[1].max() <= 1
     assert len(_truth_matched_indices) == len(_observed_matched_indices)
 
     observed_indices = catalog_indices[in_tile]
@@ -180,5 +180,5 @@ def match(
     )
     logger.info(f"{n_unmatched} of {len(observed_indices)} objects without match")
 
-    return observed_indices, observed_matched_indices, truth_matched
+    return observed_matched_indices, truth_matched
 

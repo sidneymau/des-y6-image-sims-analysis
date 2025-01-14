@@ -29,6 +29,9 @@ MDET_STEPS = [
 ]
 
 DEEPFIELD_CATALOG = "/global/cfs/cdirs/desbalro/DES_DF_COSMOS.fits"
+DES_COSMOS_CATALOG = "/global/cfs/cdirs/desbalro/des_cosmos_data_v2.fits"
+SOURCE_CATALOG = "/global/cfs/cdirs/desbalro/input_cosmos_v4.fits"
+TRUTH_CATALOG = "/global/cfs/cdirs/desbalro/input_cosmos_v4_montara_simcat_v7_seed42.fits"
 
 TRUTH_DIR = "/global/cfs/cdirs/desbalro/cosmos_simcat/"
 TRUTH_CATALOGS = {}

@@ -53,16 +53,11 @@ def _main(catalog, shear_step):
         for i, tilename in enumerate(tilenames):
             print(f"{tilename} ({i + 1} / {len(tilenames)})", end="\r", flush=True)
 
-            observed_indices, observed_matched_indices, truth_matched_table = lib.instance.match(
+            observed_matched_indices, truth_matched_table = lib.instance.match(
                 tilename,
                 hf_imsim,
                 mdet_step="noshear",
                 **shear_args,
-            )
-            _, matched_indices, _ = np.intersect1d(
-                observed_indices,
-                observed_matched_indices,
-                return_indices=True,
             )
 
             truth_ids = truth_matched_table["des_id"]
@@ -85,22 +80,22 @@ def _main(catalog, shear_step):
             y = knn.predict(_X)
             
             with h5py.File(match_file, "r+") as hf:
-                hf["mdet"]["uid"][matched_indices] = hf_imsim["mdet"]["noshear"]["uid"][observed_matched_indices]
-                hf["mdet"]["gauss_s2n"][matched_indices] = hf_imsim["mdet"]["noshear"]["gauss_s2n"][observed_matched_indices]
-                hf["mdet"]["gauss_T_ratio"][matched_indices] = hf_imsim["mdet"]["noshear"]["gauss_T_ratio"][observed_matched_indices]
-                hf["mdet"]["ra"][matched_indices] = hf_imsim["mdet"]["noshear"]["ra"][observed_matched_indices]
-                hf["mdet"]["dec"][matched_indices] = hf_imsim["mdet"]["noshear"]["dec"][observed_matched_indices]
+                hf["mdet"]["uid"][observed_matched_indices] = hf_imsim["mdet"]["noshear"]["uid"][observed_matched_indices]
+                hf["mdet"]["gauss_s2n"][observed_matched_indices] = hf_imsim["mdet"]["noshear"]["gauss_s2n"][observed_matched_indices]
+                hf["mdet"]["gauss_T_ratio"][observed_matched_indices] = hf_imsim["mdet"]["noshear"]["gauss_T_ratio"][observed_matched_indices]
+                hf["mdet"]["ra"][observed_matched_indices] = hf_imsim["mdet"]["noshear"]["ra"][observed_matched_indices]
+                hf["mdet"]["dec"][observed_matched_indices] = hf_imsim["mdet"]["noshear"]["dec"][observed_matched_indices]
 
-                hf["mdet"]["z"][matched_indices] = truth_matched_table["photoz"]
+                hf["mdet"]["z"][observed_matched_indices] = truth_matched_table["photoz"]
             
 
                 for i, band in enumerate(lib.const.DEEPFIELD_BANDS):
-                    hf["mdet"][f"DEEP:flux_{band}"][matched_indices] = _X[:, i]
-                    hf["mdet"][f"DEEP:flux_err_{band}"][matched_indices] = y[:, i]
+                    hf["mdet"][f"DEEP:flux_{band}"][observed_matched_indices] = _X[:, i]
+                    hf["mdet"][f"DEEP:flux_err_{band}"][observed_matched_indices] = y[:, i]
 
                 for band in lib.const.BANDS:
-                    hf["mdet"][f"WIDE:pgauss_flux_{band}"][matched_indices] = hf_imsim["mdet"]["noshear"][f"pgauss_band_flux_{band}"][observed_matched_indices]
-                    hf["mdet"][f"WIDE:pgauss_flux_err_{band}"][matched_indices] = hf_imsim["mdet"]["noshear"][f"pgauss_band_flux_err_{band}"][observed_matched_indices]
+                    hf["mdet"][f"WIDE:pgauss_flux_{band}"][observed_matched_indices] = hf_imsim["mdet"]["noshear"][f"pgauss_band_flux_{band}"][observed_matched_indices]
+                    hf["mdet"][f"WIDE:pgauss_flux_err_{band}"][observed_matched_indices] = hf_imsim["mdet"]["noshear"][f"pgauss_band_flux_err_{band}"][observed_matched_indices]
 
     return 0
 
