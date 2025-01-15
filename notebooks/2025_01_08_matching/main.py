@@ -9,6 +9,7 @@ import lib
 
 COLUMNS = [
     "uid",
+    # "tilename",
     "gauss_s2n",
     "gauss_T_ratio",
     "ra",
@@ -28,7 +29,7 @@ for band in lib.const.BANDS:
 def _main(catalog, shear_step):
     with h5py.File(catalog, mode="r") as hf_imsim:
 
-        tilenames = np.unique(hf_imsim["mdet"]["noshear"]["tilename"][:].astype(str))
+        tilenames = np.unique(hf_imsim["mdet"]["noshear"]["tilename"][:].astype(str))[:3]
         
         _n = hf_imsim["mdet"]["noshear"]["tilename"].len()
 
@@ -68,8 +69,8 @@ def _main(catalog, shear_step):
                 return_indices=True,
             )
 
-            deepfield_table = lib.deepfield.get_deepfield_table()
-            knn = lib.deepfield.get_knn(deepfield_table)
+            # deepfield_table = lib.deepfield.get_deepfield_table()
+            knn = lib.deepfield.get_knn()
 
             _X = np.array(
                 [
@@ -81,6 +82,7 @@ def _main(catalog, shear_step):
             
             with h5py.File(match_file, "r+") as hf:
                 hf["mdet"]["uid"][observed_matched_indices] = hf_imsim["mdet"]["noshear"]["uid"][observed_matched_indices]
+                # hf["mdet"]["tilename"][observed_matched_indices] = hf_imsim["mdet"]["noshear"]["tilename"][observed_matched_indices]
                 hf["mdet"]["gauss_s2n"][observed_matched_indices] = hf_imsim["mdet"]["noshear"]["gauss_s2n"][observed_matched_indices]
                 hf["mdet"]["gauss_T_ratio"][observed_matched_indices] = hf_imsim["mdet"]["noshear"]["gauss_T_ratio"][observed_matched_indices]
                 hf["mdet"]["ra"][observed_matched_indices] = hf_imsim["mdet"]["noshear"]["ra"][observed_matched_indices]
@@ -107,14 +109,10 @@ def main():
     with concurrent.futures.ProcessPoolExecutor(n_jobs) as executor:
         for shear_step, catalog in lib.const.IMSIM_CATALOGS.items():
             future = executor.submit(_main, catalog, shear_step)
-            futures[shear_step] = future
-        
-        # for shear_step, future in futures.items():
-        #     results[shear_step] = future.result()
-    
+            futures[shear_step] = future  
 
     for shear_step, future in futures.items():
-        print(f"{shear_step}: {future.result()}")
+        print(f"{shear_step}: exited with status {future.result()}")
 
 
 if __name__ == "__main__":

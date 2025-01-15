@@ -1,7 +1,4 @@
-import functools
 import logging
-import glob
-import os
 
 import fitsio
 import numpy as np
