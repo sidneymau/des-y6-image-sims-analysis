@@ -63,7 +63,7 @@ def get_knn():
         ]
     ).T
 
-    knn = KNeighborsRegressor(weights="distance")
+    knn = KNeighborsRegressor(n_neighbors=1, weights="distance")
     knn.fit(
         _X,
         _y,
