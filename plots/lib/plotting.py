@@ -83,6 +83,10 @@ def cm_to_in(l, /):
     return l / 2.54
 
 
+def in_to_pt(l, /):
+    return l * 6 * 12
+
+
 #------#
 # Axes #
 #------#
@@ -367,6 +371,28 @@ def contour(axs, data, bins, *, smoothing=1, **kwargs):
     )
 
     return contours
+
+
+def watermark(
+    fig,
+    text="preliminary",
+):
+    fig_width, fig_height = fig.get_size_inches()
+    angle = np.degrees(np.arctan2(fig_height, fig_width))
+    size = in_to_pt(np.hypot(fig_width, fig_height) / 12)
+    fig.text(
+        0.5,
+        0.5,
+        text,
+        color="k",
+        alpha=0.1,
+        fontsize=size,
+        rotation=angle,
+        horizontalalignment="center",
+        verticalalignment="center",
+    )
+
+    return None
 
 
 def set_palette(
