@@ -27,10 +27,12 @@ for band in lib.const.BANDS:
 
 
 def _main(catalog, shear_step):
+    knn = lib.deepfield.get_knn()
+
     with h5py.File(catalog, mode="r") as hf_imsim:
 
-        tilenames = np.unique(hf_imsim["mdet"]["noshear"]["tilename"][:].astype(str))[:3]
-        
+        tilenames = np.unique(hf_imsim["mdet"]["noshear"]["tilename"][:].astype(str))
+
         _n = hf_imsim["mdet"]["noshear"]["tilename"].len()
 
         # prepare hdf5 file
@@ -43,8 +45,12 @@ def _main(catalog, shear_step):
         with h5py.File(match_file, "w") as hf:
             mdet_group = hf.create_group("mdet")
 
-            for COLUMN in COLUMNS:
-                mdet_group.create_dataset(COLUMN, data=_data)
+            # for mdet_step in lib.const.MDET_STEPS:
+            for mdet_step in ["noshear"]:
+                shear_group = mdet_group.create_group(mdet_step)
+
+                for COLUMN in COLUMNS:
+                    shear_group.create_dataset(COLUMN, data=_data)
 
         del _data
 
@@ -60,44 +66,45 @@ def _main(catalog, shear_step):
                 mdet_step="noshear",
                 **shear_args,
             )
+            if (
+                observed_matched_indices is not None
+            ) and (
+                truth_matched_table is not None
+            ):
 
-            truth_ids = truth_matched_table["des_id"]
-            deepfield_ids = lib.deepfield.get_deepfield_ids()
-            _, truth_indices, deepfield_indices = np.intersect1d(
-                truth_ids,
-                deepfield_ids,
-                return_indices=True,
-            )
+                truth_ids = truth_matched_table["des_id"]
+                deepfield_ids = lib.deepfield.get_deepfield_ids()
+                _, truth_indices, deepfield_indices = np.intersect1d(
+                    truth_ids,
+                    deepfield_ids,
+                    return_indices=True,
+                )
 
-            # deepfield_table = lib.deepfield.get_deepfield_table()
-            knn = lib.deepfield.get_knn()
+                _X = np.array(
+                    [
+                        truth_matched_table[f"flux_{band}"]
+                        for band in lib.const.TRUTH_BANDS
+                    ]
+                ).T
+                y = knn.predict(_X)
 
-            _X = np.array(
-                [
-                    truth_matched_table[f"flux_{band}"]
-                    for band in lib.const.TRUTH_BANDS
-                ]
-            ).T
-            y = knn.predict(_X)
-            
-            with h5py.File(match_file, "r+") as hf:
-                hf["mdet"]["uid"][observed_matched_indices] = hf_imsim["mdet"]["noshear"]["uid"][observed_matched_indices]
-                # hf["mdet"]["tilename"][observed_matched_indices] = hf_imsim["mdet"]["noshear"]["tilename"][observed_matched_indices]
-                hf["mdet"]["gauss_s2n"][observed_matched_indices] = hf_imsim["mdet"]["noshear"]["gauss_s2n"][observed_matched_indices]
-                hf["mdet"]["gauss_T_ratio"][observed_matched_indices] = hf_imsim["mdet"]["noshear"]["gauss_T_ratio"][observed_matched_indices]
-                hf["mdet"]["ra"][observed_matched_indices] = hf_imsim["mdet"]["noshear"]["ra"][observed_matched_indices]
-                hf["mdet"]["dec"][observed_matched_indices] = hf_imsim["mdet"]["noshear"]["dec"][observed_matched_indices]
+                with h5py.File(match_file, "r+") as hf:
+                    hf["mdet"]["noshear"]["uid"][observed_matched_indices] = hf_imsim["mdet"]["noshear"]["uid"][observed_matched_indices]
+                    hf["mdet"]["noshear"]["gauss_s2n"][observed_matched_indices] = hf_imsim["mdet"]["noshear"]["gauss_s2n"][observed_matched_indices]
+                    hf["mdet"]["noshear"]["gauss_T_ratio"][observed_matched_indices] = hf_imsim["mdet"]["noshear"]["gauss_T_ratio"][observed_matched_indices]
+                    hf["mdet"]["noshear"]["ra"][observed_matched_indices] = hf_imsim["mdet"]["noshear"]["ra"][observed_matched_indices]
+                    hf["mdet"]["noshear"]["dec"][observed_matched_indices] = hf_imsim["mdet"]["noshear"]["dec"][observed_matched_indices]
 
-                hf["mdet"]["z"][observed_matched_indices] = truth_matched_table["photoz"]
-            
+                    hf["mdet"]["noshear"]["z"][observed_matched_indices] = truth_matched_table["photoz"]
 
-                for i, band in enumerate(lib.const.DEEPFIELD_BANDS):
-                    hf["mdet"][f"DEEP:flux_{band}"][observed_matched_indices] = _X[:, i]
-                    hf["mdet"][f"DEEP:flux_err_{band}"][observed_matched_indices] = y[:, i]
 
-                for band in lib.const.BANDS:
-                    hf["mdet"][f"WIDE:pgauss_flux_{band}"][observed_matched_indices] = hf_imsim["mdet"]["noshear"][f"pgauss_band_flux_{band}"][observed_matched_indices]
-                    hf["mdet"][f"WIDE:pgauss_flux_err_{band}"][observed_matched_indices] = hf_imsim["mdet"]["noshear"][f"pgauss_band_flux_err_{band}"][observed_matched_indices]
+                    for i, band in enumerate(lib.const.DEEPFIELD_BANDS):
+                        hf["mdet"]["noshear"][f"DEEP:flux_{band}"][observed_matched_indices] = _X[:, i]
+                        hf["mdet"]["noshear"][f"DEEP:flux_err_{band}"][observed_matched_indices] = y[:, i]
+
+                    for band in lib.const.BANDS:
+                        hf["mdet"]["noshear"][f"WIDE:pgauss_flux_{band}"][observed_matched_indices] = hf_imsim["mdet"]["noshear"][f"pgauss_band_flux_{band}"][observed_matched_indices]
+                        hf["mdet"]["noshear"][f"WIDE:pgauss_flux_err_{band}"][observed_matched_indices] = hf_imsim["mdet"]["noshear"][f"pgauss_band_flux_err_{band}"][observed_matched_indices]
 
     return 0
 

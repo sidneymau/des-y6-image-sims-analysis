@@ -28,6 +28,8 @@ MDET_STEPS = [
     "2m",
 ]
 
+MDET_CATALOG = "/global/cfs/projectdirs/des/y6-shear-catalogs/Y6A2_METADETECT_V6_UNBLINDED/metadetect_cutsv6_all.h5"
+
 DEEPFIELD_CATALOG = "/global/cfs/cdirs/desbalro/DES_DF_COSMOS.fits"
 DES_COSMOS_CATALOG = "/global/cfs/cdirs/desbalro/des_cosmos_data_v2.fits"
 SOURCE_CATALOG = "/global/cfs/cdirs/desbalro/input_cosmos_v4.fits"
