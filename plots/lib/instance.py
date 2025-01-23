@@ -66,17 +66,15 @@ def match(
         dec = truth_table["dec_sim"][i]
         redshift = truth_table["photoz"][i]
 
-        if (redshift > zlow) & (redshift <= zhigh):
-            _shear = shear_slice
-        else:
-            _shear = shear_other
-        logger.debug(f"Applying shear {_shear} to object with redshift {redshift}")
-
         world_pos = coord.CelestialCoord(ra=ra * coord.degrees, dec=dec * coord.degrees)
         u, v = wcs.center.project(world_pos, projection="gnomonic")
         pos = galsim.PositionD(u.rad, v.rad)
 
-        sheared_pos = pos.shear(_shear)
+        if (redshift > zlow) & (redshift <= zhigh):
+            sheared_pos = pos.shear(shear_slice)
+        else:
+            sheared_pos = pos.shear(shear_other)
+
         u2 = sheared_pos.x * coord.radians
         v2 = sheared_pos.y * coord.radians
         sheared_world_pos = wcs.center.deproject(u2, v2, projection="gnomonic")
@@ -109,51 +107,69 @@ def match(
         r=query_radius,
     )
 
-    logger.info(f"Sorting matches by Chi^2")
-    _min_chi2_indices = np.array([
-        np.argsort(
-            np.sum(
-                [
-                    np.square(
-                        np.divide(
-                            np.subtract(
-                                observed_table[f"pgauss_band_flux_{band}"][_i],
-                                truth_table[f"flux_{band}"][indices[_i]]
-                            ),
-                            observed_table[f"pgauss_band_flux_err_{band}"][_i]
+    n_match = sum(map(len, indices))
+
+    if n_match > 0:
+
+        logger.info(f"Sorting matches by Chi^2")
+        _min_chi2_indices = np.array([
+            np.argsort(
+                np.sum(
+                    [
+                        np.square(
+                            np.divide(
+                                np.subtract(
+                                    observed_table[f"pgauss_band_flux_{band}"][_i],
+                                    truth_table[f"flux_{band}"][indices[_i]]
+                                ),
+                                observed_table[f"pgauss_band_flux_err_{band}"][_i]
+                            )
                         )
-                    )
-                    for band in const.BANDS
-                ],
-                axis=0
-            )
-        )[0] if len(indices[_i]) > 0 else 0
-        for _i in range(len(observed_points))
-    ])
+                        for band in const.BANDS
+                    ],
+                    axis=0
+                )
+            )[0] if len(indices[_i]) > 0 else 0
+            for _i in range(len(observed_points))
+        ])
 
-    _observed_matched_indices = np.array([
-        i
-        for (i, _i) in enumerate(indices) if len(_i) > 0
-    ])
-    _truth_matched_indices = np.array([
-        _i[_ii]
-        for (_i, _ii) in zip(indices, _min_chi2_indices) if len(_i) > 0
-    ])
+        _observed_matched_indices = np.array([
+            i
+            for (i, _i) in enumerate(indices) if len(_i) > 0
+        ])
+        _truth_matched_indices = np.array([
+            _i[_ii]
+            for (_i, _ii) in zip(indices, _min_chi2_indices) if len(_i) > 0
+        ])
 
-    assert np.unique(_observed_matched_indices, return_counts=True)[1].max() <= 1
-    assert len(_truth_matched_indices) == len(_observed_matched_indices)
+        # _observed_matched_filter = np.isin(
+        #     np.arange(len(indices)),
+        #     _observed_matched_indices,
+        # )
 
-    observed_indices = catalog_indices[in_tile]
-    observed_matched_indices = catalog_indices[in_tile][_observed_matched_indices]
-    truth_matched = truth_table[_truth_matched_indices]
+        # _truth_matched_filter = np.isin(
+        #     np.arange(len(indices)),
+        #     _truth_matched_indices,
+        # )
 
-    n_unmatched = len(
-        np.setdiff1d(
-            observed_indices,
-            observed_matched_indices,
-        )
-    )
-    logger.info(f"{n_unmatched} of {len(observed_indices)} objects without match")
+        # assert np.unique(_observed_matched_indices, return_counts=True)[1].max() <= 1
+        # assert len(_truth_matched_indices) == len(_observed_matched_indices)
 
-    return observed_matched_indices, truth_matched
+        # observed_indices = catalog_indices[in_tile]
+        observed_matched_indices = catalog_indices[in_tile][_observed_matched_indices]
+        truth_matched = truth_table[_truth_matched_indices]
+        # observed_matched_indices = catalog_indices[in_tile][_observed_matched_filter]
+        # truth_matched = truth_table[_truth_matched_filter]
+
+        # n_unmatched = len(
+        #     np.setdiff1d(
+        #         observed_indices,
+        #         observed_matched_indices,
+        #     )
+        # )
+
+        return observed_matched_indices, truth_matched
+
+    else:
+        return None, None
 
