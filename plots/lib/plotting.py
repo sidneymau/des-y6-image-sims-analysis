@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 # Styling #
 #---------#
 
-def set_style( restore_defaults=False):
+def set_style(restore_defaults=True):
     if restore_defaults:
         logger.info(f"restoring matplotlib defaults")
         mpl.rcdefaults()
@@ -42,7 +42,7 @@ def set_style( restore_defaults=False):
     return None
 
 
-def set_type(font="monospace", latex=True):
+def set_type(font="monospace", latex=False):
     logger.info(f"setting font in {font}")
     mpl.rcParams["font.family"] = font
 
@@ -65,13 +65,20 @@ def set_type(font="monospace", latex=True):
 
         if font not in TexManager._font_families:
             warnings.warn(f"{font} is invalid latex font")
+    # else:
+    #     # mpl.rcParams["font.monospace"] = "Courier New"
+    #     mpl.rcParams["font.monospace"] = "Nimbus Mono PS"
+    #     mpl.rcParams["text.usetex"] = False
+    #     mpl.rcParams["mathtext.fontset"] = "custom"
+    #     mpl.rcParams["mathtext.default"] = "regular"
+    #     mpl.rcParams["mathtext.fallback"] = None
 
     return None
 
 
-def setup():
-    set_style()
-    set_type()
+def setup(restore_defaults=True, latex=False):
+    set_style(restore_defaults=restore_defaults)
+    set_type(latex=latex)
 
 
 # US Letter
