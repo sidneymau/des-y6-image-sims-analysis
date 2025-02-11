@@ -1,3 +1,5 @@
+import random
+
 import h5py
 import numpy as np
 import matplotlib.pyplot as plt
@@ -14,16 +16,6 @@ onecolumn_kwargs = {
     "fig_width": 3 + 4/12,
     "fig_height": 3,
 }
-
-twocolumn_kwargs = {
-    "width": 6,
-    "height": 2,
-    "margin": 1,
-    "gutter": 1,
-    "fig_width": 8,
-    "fig_height": 4,
-}
-
 
 
 def main():
@@ -61,10 +53,15 @@ def main():
 
     _med_flux_err = np.median(_flux_err)
 
+    # n_train = len(truth_ids) // 2
+    # train_indices = random.choices(range(len(truth_ids)), k=n_train)
+    # test_indices = np.setdiff1d(range(len(truth_ids)), train_indices)
 
     X_train = np.array(
         [
             truth_table[f"flux_{band}"][truth_indices]
+            # truth_table[f"flux_{band}"][:n_train]
+            # truth_table[f"flux_{band}"][train_indices]
             for band in lib.const.TRUTH_BANDS
         ]
     ).T
@@ -74,6 +71,8 @@ def main():
     X_test = np.array(
         [
             truth_table[f"flux_{band}"][truth_diff_indices]
+            # truth_table[f"flux_{band}"][n_train:]
+            # truth_table[f"flux_{band}"][test_indices]
             for band in lib.const.TRUTH_BANDS
         ]
     ).T
@@ -98,52 +97,127 @@ def main():
         ),
     ]
 
+    deep_hist, _, _ = np.histogram2d(_flux, _flux_err, bins=bins)
+    train_hist, _, _ = np.histogram2d(X_train[:, 2], y_train[:, 2], bins=bins)
+    test_hist, _, _ = np.histogram2d(X_test[:, 2], y_test[:, 2], bins=bins)
+
+    percentiles = 1.0 - np.exp(-0.5 * np.array([1.5, 2.0, 2.5, 3.0]) ** 2)
+    levels = lib.util.get_levels(deep_hist, percentiles=percentiles)
+    train_levels = lib.util.get_levels(train_hist, percentiles=percentiles)
+    test_levels = lib.util.get_levels(test_hist, percentiles=percentiles)
+
     fig, axs = lib.plotting.make_axes(
-        1, 3,
-        sharex="row",
-        sharey="row",
-        width=1.5,
-        height=1.5,
-        horizontal_margin=8/12,
-        vertical_margin=6/12,
-        gutter=7/12,
-        fig_width=7,
-        fig_height=2.5,
+        1, 1,
+        **onecolumn_kwargs,
+        # 1, 3,
+        # sharex="row",
+        # sharey="row",
+        # width=1.5,
+        # height=1.5,
+        # horizontal_margin=8/12,
+        # vertical_margin=6/12,
+        # gutter=7/12,
+        # fig_width=7,
+        # fig_height=2.5,
     )
 
-    axs[0].hist2d(
-        _flux,
-        _flux_err,
-        bins=bins,
+    artists = []
+    labels = []
+
+    contours = lib.plotting.contour(
+        axs,
+        deep_hist,
+        bins,
+        levels=levels,
+        linestyles=":",
+        colors="gray",
     )
-    axs[0].set_title("Deep Field")
+    _artists, _labels = contours.legend_elements()
+    artists.append(_artists[0])
+    labels.append("Deep Field")
 
-    axs[1].hist2d(
-        X_train[:, 2],
-        y_train[:, 2],
-        bins=bins,
+    contours = lib.plotting.contour(
+        axs,
+        train_hist,
+        bins,
+        levels=train_levels,
+        linestyles="--",
+        colors="k",
     )
-    axs[1].tick_params("y", labelleft=False)
-    axs[1].set_title("KNN (training)")
+    _artists, _labels = contours.legend_elements()
+    artists.append(_artists[0])
+    labels.append("KNN (train)")
 
-    axs[2].hist2d(
-        X_test[:, 2],
-        y_test[:, 2],
-        bins=bins,
+    contours = lib.plotting.contour(
+        axs,
+        test_hist,
+        bins,
+        levels=test_levels,
+        linestyles="-",
+        colors="r",
     )
-    axs[2].tick_params("y", labelleft=False)
-    axs[2].set_title("KNN (validation)")
+    _artists, _labels = contours.legend_elements()
+    artists.append(_artists[0])
+    labels.append("KNN (validation)")
 
-    axs[0].set_xscale("log")
-    axs[0].set_yscale("log")
+    axs.set_xscale("log")
+    axs.set_yscale("log")
 
-    fig.supxlabel("$r$ [flux]")
-    fig.supylabel("$\\sigma_r$ [flux]")
+    axs.set_xlabel("$r$ [flux]")
+    axs.set_ylabel("$\\sigma_r$ [flux]")
 
+    axs.legend(artists, labels, loc="upper left")
 
     lib.plotting.watermark(fig)
 
     fig.savefig("flux_knn.pdf")
+
+    # fig, axs = lib.plotting.make_axes(
+    #     1, 3,
+    #     sharex="row",
+    #     sharey="row",
+    #     width=1.5,
+    #     height=1.5,
+    #     horizontal_margin=8/12,
+    #     vertical_margin=6/12,
+    #     gutter=7/12,
+    #     fig_width=7,
+    #     fig_height=2.5,
+    # )
+
+    # axs[0].hist2d(
+    #     _flux,
+    #     _flux_err,
+    #     bins=bins,
+    # )
+    # axs[0].set_title("Deep Field")
+
+    # axs[1].hist2d(
+    #     X_train[:, 2],
+    #     y_train[:, 2],
+    #     bins=bins,
+    # )
+    # axs[1].tick_params("y", labelleft=False)
+    # axs[1].set_title("KNN (training)")
+
+    # axs[2].hist2d(
+    #     X_test[:, 2],
+    #     y_test[:, 2],
+    #     bins=bins,
+    # )
+    # axs[2].tick_params("y", labelleft=False)
+    # axs[2].set_title("KNN (validation)")
+
+    # axs[0].set_xscale("log")
+    # axs[0].set_yscale("log")
+
+    # fig.supxlabel("$r$ [flux]")
+    # fig.supylabel("$\\sigma_r$ [flux]")
+
+
+    # lib.plotting.watermark(fig)
+
+    # fig.savefig("flux_knn.pdf")
 
 
 if __name__ == "__main__":
