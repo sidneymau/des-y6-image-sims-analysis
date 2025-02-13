@@ -61,7 +61,7 @@ MATCH_CATALOGS = {
     for shear_step in SHEAR_STEPS
 }
 
-TRUTH_MATCH_CATALOG = "/global/cfs/cdirs/des/y6-image-sims/fiducial-matches/truth.hdf5"
+TRUTH_MATCH_CATALOG = "/global/cfs/cdirs/des/y6-image-sims/fiducial-matches/truth-match.hdf5"
 
 REDSHIFT_DIR = "/global/cfs/cdirs/des/y6-redshift/imsim_400Tile/fidbin_S005/"
 REDSHIFT_CATALOGS = {
