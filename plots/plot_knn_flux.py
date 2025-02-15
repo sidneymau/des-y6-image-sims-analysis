@@ -146,7 +146,7 @@ def main():
     )
     _artists, _labels = contours.legend_elements()
     artists.append(_artists[0])
-    labels.append("KNN (train)")
+    labels.append("KNN (inform)")
 
     contours = lib.plotting.contour(
         axs,
@@ -158,7 +158,7 @@ def main():
     )
     _artists, _labels = contours.legend_elements()
     artists.append(_artists[0])
-    labels.append("KNN (validation)")
+    labels.append("KNN (predict)")
 
     axs.set_xscale("log")
     axs.set_yscale("log")
