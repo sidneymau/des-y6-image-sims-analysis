@@ -16,14 +16,14 @@ COLUMNS = [
     "dec",
     "z",
 ]
-        
-for band in lib.const.DEEPFIELD_BANDS:
-    COLUMNS.append(f"DEEP:flux_{band}")
-    COLUMNS.append(f"DEEP:flux_err_{band}")
 
 for band in lib.const.BANDS:
     COLUMNS.append(f"WIDE:pgauss_flux_{band}")
     COLUMNS.append(f"WIDE:pgauss_flux_err_{band}")
+ 
+for band in lib.const.DEEPFIELD_BANDS:
+    COLUMNS.append(f"DEEP:flux_{band}")
+    COLUMNS.append(f"DEEP:flux_err_{band}")
 
 
 def _main(catalog, shear_step):
@@ -33,26 +33,26 @@ def _main(catalog, shear_step):
 
         tilenames = np.unique(hf_imsim["mdet"]["noshear"]["tilename"][:].astype(str))
 
-        _n = hf_imsim["mdet"]["noshear"]["tilename"].len()
-
-        # prepare hdf5 file
-        _data = np.full(_n, np.nan)
         match_filename = f"match_{shear_step}.hdf5"
         match_file = os.path.join(
-            "/pscratch/sd/s/smau/y6-image-sims-matches",
+            "/pscratch/sd/s/smau/fiducial-matches",
             match_filename,
         )
         with h5py.File(match_file, "w") as hf:
             mdet_group = hf.create_group("mdet")
 
-            # for mdet_step in lib.const.MDET_STEPS:
-            for mdet_step in ["noshear"]:
+            for mdet_step in lib.const.MDET_STEPS:
                 shear_group = mdet_group.create_group(mdet_step)
+
+                _n = hf_imsim["mdet"][mdet_step]["uid"].len()
+        
+                # prepare hdf5 file
+                _data = np.full(_n, np.nan)
 
                 for COLUMN in COLUMNS:
                     shear_group.create_dataset(COLUMN, data=_data)
 
-        del _data
+            del _data
 
         print(f"matching {shear_step}")
         shear_args = lib.util.parse_shear_arguments(shear_step)
@@ -89,22 +89,33 @@ def _main(catalog, shear_step):
                 y = knn.predict(_X)
 
                 with h5py.File(match_file, "r+") as hf:
-                    hf["mdet"]["noshear"]["uid"][observed_matched_indices] = hf_imsim["mdet"]["noshear"]["uid"][observed_matched_indices]
-                    hf["mdet"]["noshear"]["gauss_s2n"][observed_matched_indices] = hf_imsim["mdet"]["noshear"]["gauss_s2n"][observed_matched_indices]
-                    hf["mdet"]["noshear"]["gauss_T_ratio"][observed_matched_indices] = hf_imsim["mdet"]["noshear"]["gauss_T_ratio"][observed_matched_indices]
-                    hf["mdet"]["noshear"]["ra"][observed_matched_indices] = hf_imsim["mdet"]["noshear"]["ra"][observed_matched_indices]
-                    hf["mdet"]["noshear"]["dec"][observed_matched_indices] = hf_imsim["mdet"]["noshear"]["dec"][observed_matched_indices]
-
-                    hf["mdet"]["noshear"]["z"][observed_matched_indices] = truth_matched_table["photoz"]
-
-
-                    for i, band in enumerate(lib.const.DEEPFIELD_BANDS):
-                        hf["mdet"]["noshear"][f"DEEP:flux_{band}"][observed_matched_indices] = _X[:, i]
-                        hf["mdet"]["noshear"][f"DEEP:flux_err_{band}"][observed_matched_indices] = y[:, i]
-
-                    for band in lib.const.BANDS:
-                        hf["mdet"]["noshear"][f"WIDE:pgauss_flux_{band}"][observed_matched_indices] = hf_imsim["mdet"]["noshear"][f"pgauss_band_flux_{band}"][observed_matched_indices]
-                        hf["mdet"]["noshear"][f"WIDE:pgauss_flux_err_{band}"][observed_matched_indices] = hf_imsim["mdet"]["noshear"][f"pgauss_band_flux_err_{band}"][observed_matched_indices]
+                    for mdet_step in lib.const.MDET_STEPS:
+                        if mdet_step == "noshear":
+                            hf["mdet"][mdet_step]["uid"][observed_matched_indices] = hf_imsim["mdet"][mdet_step]["uid"][observed_matched_indices]
+                            hf["mdet"][mdet_step]["gauss_s2n"][observed_matched_indices] = hf_imsim["mdet"][mdet_step]["gauss_s2n"][observed_matched_indices]
+                            hf["mdet"][mdet_step]["gauss_T_ratio"][observed_matched_indices] = hf_imsim["mdet"][mdet_step]["gauss_T_ratio"][observed_matched_indices]
+                            hf["mdet"][mdet_step]["ra"][observed_matched_indices] = hf_imsim["mdet"][mdet_step]["ra"][observed_matched_indices]
+                            hf["mdet"][mdet_step]["dec"][observed_matched_indices] = hf_imsim["mdet"][mdet_step]["dec"][observed_matched_indices]
+        
+                            hf["mdet"][mdet_step]["z"][observed_matched_indices] = truth_matched_table["photoz"]
+        
+        
+                            for i, band in enumerate(lib.const.DEEPFIELD_BANDS):
+                                hf["mdet"][mdet_step][f"DEEP:flux_{band}"][observed_matched_indices] = _X[:, i]
+                                hf["mdet"][mdet_step][f"DEEP:flux_err_{band}"][observed_matched_indices] = y[:, i]
+        
+                            for band in lib.const.BANDS:
+                                hf["mdet"][mdet_step][f"WIDE:pgauss_flux_{band}"][observed_matched_indices] = hf_imsim["mdet"][mdet_step][f"pgauss_band_flux_{band}"][observed_matched_indices]
+                                hf["mdet"][mdet_step][f"WIDE:pgauss_flux_err_{band}"][observed_matched_indices] = hf_imsim["mdet"][mdet_step][f"pgauss_band_flux_err_{band}"][observed_matched_indices]
+                        else:
+                            hf["mdet"][mdet_step]["uid"][:] = hf_imsim["mdet"][mdet_step]["uid"][:]
+                            hf["mdet"][mdet_step]["gauss_s2n"][:] = hf_imsim["mdet"][mdet_step]["gauss_s2n"][:]
+                            hf["mdet"][mdet_step]["gauss_T_ratio"][:] = hf_imsim["mdet"][mdet_step]["gauss_T_ratio"][:]
+                            hf["mdet"][mdet_step]["ra"][:] = hf_imsim["mdet"][mdet_step]["ra"][:]
+                            hf["mdet"][mdet_step]["dec"][:] = hf_imsim["mdet"][mdet_step]["dec"][:]
+                            for band in lib.const.BANDS:
+                                hf["mdet"][mdet_step][f"WIDE:pgauss_flux_{band}"][:] = hf_imsim["mdet"][mdet_step][f"pgauss_band_flux_{band}"][:]
+                                hf["mdet"][mdet_step][f"WIDE:pgauss_flux_err_{band}"][:] = hf_imsim["mdet"][mdet_step][f"pgauss_band_flux_err_{band}"][:]
 
     return 0
 
