@@ -350,12 +350,25 @@ def mesh(
     return mesh
 
 
-def get_bin_centers(bins):
+def _get_bin_centers_linear(bins):
     return 0.5 * (bins[:-1] + bins[1:])
 
+def _get_bin_centers_log(bins):
+    return (bins[:-1] * bins[1:])**(0.5)
 
-def contour1d(axs, data, bins, *, smoothing=1, **kwargs):
-    bin_centers = get_bin_centers(bins)
+def get_bin_centers(bins, log=False):
+    match log:
+        case False:
+            centers = _get_bin_centers_linear(bins)
+        case True:
+            centers = _get_bin_centers_log(bins)
+        case _:
+            raise ValueError()
+    return centers
+
+
+def contour1d(axs, data, bins, *, smoothing=1, log=False, **kwargs):
+    bin_centers = get_bin_centers(bins, log=log)
     lines = axs.plot(
         bin_centers,
         gaussian_filter(data, sigma=smoothing),
@@ -365,10 +378,10 @@ def contour1d(axs, data, bins, *, smoothing=1, **kwargs):
     return lines
 
 
-def contour(axs, data, bins, *, smoothing=1, **kwargs):
+def contour(axs, data, bins, *, smoothing=1, log=[False, False], **kwargs):
     bin_centers = (
-        get_bin_centers(bins[0]),
-        get_bin_centers(bins[1])
+        get_bin_centers(bins[0], log=log[0]),
+        get_bin_centers(bins[1], log=log[1])
     )
     contours = axs.contour(
         bin_centers[0],
