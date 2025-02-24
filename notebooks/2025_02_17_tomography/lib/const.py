@@ -70,11 +70,11 @@ MATCH_CATALOGS = {
 
 TRUTH_MATCH_CATALOG = "/global/cfs/cdirs/des/y6-image-sims/fiducial-matches/truth-match.hdf5"
 
-REDSHIFT_DIR = "/global/cfs/cdirs/des/y6-redshift/imsim_400Tile/fidbin_S005/"
+REDSHIFT_DIR = "/global/cfs/cdirs/des/boyan/sompz_output/y6_imsim_1000Tile/"
 REDSHIFT_CATALOGS = {
     shear_step: os.path.join(
         REDSHIFT_DIR,
-        f"{shear_step}_sompz_unblind_fidbin.h5",
+        f"{shear_step}_sompz_fidbin.h5",
     )
     for shear_step in SHEAR_STEPS
 }
