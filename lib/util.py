@@ -16,9 +16,39 @@ from esutil.pbar import PBar
 from ngmix.medsreaders import NGMixMEDS
 from pizza_cutter_metadetect.masks import get_slice_bounds
 
+from . import const
+
 
 logger = logging.getLogger(__name__)
 
+
+def flux_to_mag(flux):
+    return const.ZEROPOINT - 2.5 * np.log10(flux)
+
+
+def mag_to_flux(mag):
+    return np.power(
+        10,
+        -(mag - const.ZEROPOINT) / 2.5,
+    )
+
+
+def mag_to_flux_with_error(mag, mag_err):
+    _flux = mag_to_flux(mag)
+    _flux_err = np.log(10) / 2.5 * _flux * mag_err
+    return _flux, _flux_err
+
+
+def parse_shear_arguments(shear_string):
+    return dict(
+        map(
+            lambda x: (x[0], eval(x[1])),
+            map(
+                lambda x: x.split("="),
+                shear_string.split("__")
+            )
+        )
+    )
 
 # thanks @eli
 def extractor(m, poly):
@@ -175,108 +205,51 @@ def read_meds(fname):
     return full_image
 
 
-def gather_inputs():
-    inputs = []
-    input_base = Path(os.environ["IMSIM_DATA"]) / "cosmos_simcat"
-    for input_path in input_base.glob("cosmos_simcat_v7_DES[0-9]*[+-][0-9]*_seed[0-9]*.fits"):
-        input_file = input_path.as_posix()
-        logger.info(input_file)
-        inputs.append(input_file)
+# from https://github.com/beckermr/des-y6-analysis/blob/main/2024_10_21_fgmodels/des_y6_nz_modeling.py
+def sompz_integral(y, x, low, high):
+    low = np.minimum(x[-1], np.maximum(low, x[0]))
+    high = np.minimum(x[-1], np.maximum(high, x[0]))
+    low_ind = np.digitize(low, x)
+    # for the lower index we do not use right=True, but
+    # we still want to clip to a valid index of x
+    low_ind = np.minimum(low_ind, x.shape[0] - 1)
+    high_ind = np.digitize(high, x, right=True)
+    dx = x[1:] - x[:-1]
 
-    return inputs
+    # high point not in same bin as low point
+    not_in_single_bin = high_ind > low_ind
 
-
-# def gather_sims(imsim_path):
-#     imsim_path = Path(imsim_path)
-#     config_name = imsim_path.name
-#     tile_dirs = imsim_path.glob("*")
-# 
-#     shears = ["plus", "minus"]
-# 
-#     pairs = {}
-#     for tile_dir in tile_dirs:
-#         tile = tile_dir.stem
-#         pairs[tile] = {}
-# 
-#         seed_dirs = tile_dir.glob("*")
-# 
-#         for seed_dir in seed_dirs:
-#             seed = seed_dir.stem
-# 
-#             pairs[tile][seed] = {}
-#             for shear in shears:
-#                 # pairs[tile][run][shear] = {}
-#                 catalog_fname = seed_dir / shear / "des-pizza-slices-y6" / tile / "metadetect" / f"{tile}_metadetect-config_mdetcat_part0000.fits"
-#                 mask_fname = seed_dir / shear / "des-pizza-slices-y6" / tile / "metadetect" / f"{tile}_metadetect-config_mdetcat_part0000-healsparse-mask.hs"
-#                 pizza_slices_dir = seed_dir / shear / "des-pizza-slices-y6"
-# 
-#                 pairs[tile][seed][shear] = {
-#                     "catalog": catalog_fname.as_posix(),
-#                     "mask": mask_fname.as_posix(),
-#                     "pizza_slices_dir": pizza_slices_dir.as_posix(),
-#                 }
-# 
-#                 print(tile, seed, shear)
-# 
-#             exists = [
-#                 (
-#                     os.path.exists(pairs[tile][seed][shear]["catalog"])
-#                     and os.path.exists(pairs[tile][seed][shear]["mask"])
-#                     and os.path.exists(pairs[tile][seed][shear]["pizza_slices_dir"])
-#                 ) for shear in shears
-#             ]
-#             if not functools.reduce(operator.and_, exists):
-#                 print("removing ", tile, seed)
-#                 pairs[tile].pop(seed)
-#                 continue
-# 
-# 
-#     return pairs
-
-# def gather_catalogs(imsim_path):
-#     catalogs = {}
-#     for catalog_file in (imsim_path / "g1_slice=0.02__g2_slice=0.00__g1_other=0.00__g2_other=0.00__zlow=0.0__zhigh=6.0").glob("*"):
-# 
-#         catalogs["plus"] = str(catalog_file)
-# 
-#     for catalog_file in (imsim_path / "g1_slice=-0.02__g2_slice=0.00__g1_other=0.00__g2_other=0.00__zlow=0.0__zhigh=6.0").glob("*"):
-#         catalogs["minus"] = str(catalog_file)
-# 
-#     return catalogs
-def gather_catalogs(imsim_path):
-    catalogs = {}
-    for catalog_file in (imsim_path / "g1_slice=0.02__g2_slice=0.00__g1_other=0.00__g2_other=0.00__zlow=0.0__zhigh=6.0").glob("*"):
-        tilename = catalog_file.name.split("_")[0]
-
-        catalogs[tilename] = {}
-        catalogs[tilename]["plus"] = str(catalog_file)
-
-    for catalog_file in (imsim_path / "g1_slice=-0.02__g2_slice=0.00__g1_other=0.00__g2_other=0.00__zlow=0.0__zhigh=6.0").glob("*"):
-        tilename = catalog_file.name.split("_")[0]
-        catalogs[tilename]["minus"] = str(catalog_file)
-
-    return catalogs
-
-
-def get_levels(hist, percentiles=[0.5]):
-    levels = np.quantile(
-        hist[hist > 0],
-        percentiles,
+    # fractional bit on the left
+    ileft = np.where(
+        not_in_single_bin,
+        (y[low_ind - 1] + y[low_ind])
+        / 2.0
+        * (1.0 - (low - x[low_ind - 1]) / dx[low_ind - 1])
+        * dx[low_ind - 1],
+        (y[low_ind - 1] + y[low_ind]) / 2.0 * (high - low),
     )
-    # levels = np.array([
-    #     np.max(hist[hist < percentile * np.mean(hist[hist > 0])])
-    #     for percentile in percentiles
-    # ])
 
-    logger.info("percentiles:", percentiles)
-    logger.info("levels:", levels)
+    # fractional bit on the right
+    iright = np.where(
+        not_in_single_bin,
+        (y[high_ind - 1] + y[high_ind]) / 2.0 * (high - x[high_ind - 1]),
+        0.0,
+    )
 
-    return levels
+    # central bits
+    yint = (y[1:] + y[:-1]) / 2.0 * dx
+    yind = np.arange(yint.shape[0])
+    msk = (yind >= low_ind) & (yind < high_ind - 1)
+    icen = np.where(
+        np.any(msk),
+        np.sum(
+            np.where(
+                msk,
+                yint,
+                np.zeros_like(yint),
+            )
+        ),
+        0.0,
+    )
 
-def get_percentile(hist, level):
-
-    percentile = (1 - np.mean(hist[hist > 0] < level)) * 100
-    # percentile = np.sum(hist[hist > level]) / np.sum(hist) * 100
-
-    return percentile
-
+    return ileft + icen + iright
