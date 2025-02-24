@@ -1,4 +1,3 @@
-import argparse
 import concurrent.futures
 import itertools
 import os
@@ -10,8 +9,7 @@ import matplotlib.pyplot as plt
 import tqdm
 import h5py
 
-import weights
-import tomography
+import lib
 
 
 ALPHA = {
@@ -28,22 +26,6 @@ ALPHA = {
     9: (2.7, 6.0),
 }
 ALPHA_BINS = [-1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
-TOMOGRAPHIC_BINS = [0, 1, 2, 3]
-MDET_STEPS = ["noshear", "1p", "1m", "2p", "2m"]
-SHEAR_STEPS = [
-    'g1_slice=-0.02__g2_slice=0.00__g1_other=0.00__g2_other=0.00__zlow=0.0__zhigh=6.0',
-    'g1_slice=0.02__g2_slice=0.00__g1_other=-0.02__g2_other=0.00__zlow=0.6__zhigh=0.9',
-    'g1_slice=0.02__g2_slice=0.00__g1_other=-0.02__g2_other=0.00__zlow=1.8__zhigh=2.1',
-    'g1_slice=0.02__g2_slice=0.00__g1_other=0.00__g2_other=0.00__zlow=0.0__zhigh=6.0',
-    'g1_slice=0.02__g2_slice=0.00__g1_other=-0.02__g2_other=0.00__zlow=0.9__zhigh=1.2',
-    'g1_slice=0.02__g2_slice=0.00__g1_other=-0.02__g2_other=0.00__zlow=2.1__zhigh=2.4',
-    'g1_slice=0.02__g2_slice=0.00__g1_other=-0.02__g2_other=0.00__zlow=0.0__zhigh=0.3',
-    'g1_slice=0.02__g2_slice=0.00__g1_other=-0.02__g2_other=0.00__zlow=1.2__zhigh=1.5',
-    'g1_slice=0.02__g2_slice=0.00__g1_other=-0.02__g2_other=0.00__zlow=2.4__zhigh=2.7',
-    'g1_slice=0.02__g2_slice=0.00__g1_other=-0.02__g2_other=0.00__zlow=0.3__zhigh=0.6',
-    'g1_slice=0.02__g2_slice=0.00__g1_other=-0.02__g2_other=0.00__zlow=1.5__zhigh=1.8',
-    'g1_slice=0.02__g2_slice=0.00__g1_other=-0.02__g2_other=0.00__zlow=2.7__zhigh=6.0',
-]
 
 
 def concatenate_catalogs(data):
@@ -52,13 +34,13 @@ def concatenate_catalogs(data):
         mdet_step: np.hstack(
             [_d[mdet_step] for _d in _dp],
         )
-        for mdet_step in MDET_STEPS
+        for mdet_step in lib.const.MDET_STEPS
     }
     dm = {
         mdet_step: np.hstack(
             [_d[mdet_step] for _d in _dm],
         )
-        for mdet_step in MDET_STEPS
+        for mdet_step in lib.const.MDET_STEPS
     }
     return dp, dm
 
@@ -67,13 +49,13 @@ def process_file(*, dset, bhat, tile, tomographic_bin=None):
     mdet = dset["mdet"]
 
     res = {}
-    for mdet_step in MDET_STEPS:
+    for mdet_step in lib.const.MDET_STEPS:
         mdet_cat = mdet[mdet_step]
         in_tile = mdet_cat["tilename"][:] == tile
         in_tomo = bhat[mdet_step] == tomographic_bin
         sel = in_tile & in_tomo
 
-        _w = weights.get_shear_weights(mdet_cat, sel)
+        _w = lib.weight.get_shear_weights(mdet_cat, sel=sel)
         n = np.sum(_w)
         if n > 0:
             g1 = np.average(mdet_cat["gauss_g_1"][sel], weights=_w)
@@ -168,20 +150,20 @@ def process_pair(catalog_p, catalog_m, redshift_catalog_p, redshift_catalog_m, s
     )
 
     bhat_plus = {
-        mdet_step: tomography.get_tomography(
+        mdet_step: lib.tomography.get_tomography(
             hf_plus,
             hf_redshift_plus,
             mdet_step,
         )
-        for mdet_step in MDET_STEPS
+        for mdet_step in lib.const.MDET_STEPS
     }
     bhat_minus = {
-        mdet_step: tomography.get_tomography(
+        mdet_step: lib.tomography.get_tomography(
             hf_minus,
             hf_redshift_minus,
             mdet_step,
         )
-        for mdet_step in MDET_STEPS
+        for mdet_step in lib.const.MDET_STEPS
     }
 
     tilenames_p = np.unique(hf_plus["mdet"]["noshear"]["tilename"][:])
@@ -191,7 +173,7 @@ def process_pair(catalog_p, catalog_m, redshift_catalog_p, redshift_catalog_m, s
     ntiles = len(tilenames)
 
     results = {}
-    for tomographic_bin in TOMOGRAPHIC_BINS:
+    for tomographic_bin in lib.const.TOMOGRAPHIC_BINS:
         data = [
             process_file_pair(hf_plus, hf_minus, bhat_plus, bhat_minus, tile=tile, tomographic_bin=tomographic_bin)
             for tile in tqdm.tqdm(
@@ -235,80 +217,65 @@ def process_pair(catalog_p, catalog_m, redshift_catalog_p, redshift_catalog_m, s
 
 
 def main():
-    imsim_base = "/global/cfs/cdirs/des/y6-image-sims/fiducial-400/"
-    imsim_catalogs = {
-        shear_step: os.path.join(
-            imsim_base,
-            shear_step,
-            "metadetect_cutsv6_all.h5",
-        )
-        for shear_step in SHEAR_STEPS
-    }
+    shear_catalogs = lib.const.SIM_SHEAR_CATALOGS
 
-    redshift_base = "/global/cfs/cdirs/des/y6-redshift/imsim_400Tile/fidbin_S005/"
-    redshift_catalogs = {
-        shear_step: os.path.join(
-            redshift_base,
-            f"{shear_step}_sompz_unblind_fidbin.h5"
-        )
-        for shear_step in SHEAR_STEPS
-    }
+    redshift_catalogs = lib.const.SIM_REDSHIFT_CATALOGS
 
     kwargs = {"seed": None, "resample": "jackknife"}
     # kwargs = {"seed": 42, "resample": "bootstrap"}
 
-    imsim_constant_pair = (
-        imsim_catalogs["g1_slice=0.02__g2_slice=0.00__g1_other=0.00__g2_other=0.00__zlow=0.0__zhigh=6.0"],
-        imsim_catalogs["g1_slice=-0.02__g2_slice=0.00__g1_other=0.00__g2_other=0.00__zlow=0.0__zhigh=6.0"]
+    shear_constant_catalog_pair = (
+        shear_catalogs["g1_slice=0.02__g2_slice=0.00__g1_other=0.00__g2_other=0.00__zlow=0.0__zhigh=6.0"],
+        shear_catalogs["g1_slice=-0.02__g2_slice=0.00__g1_other=0.00__g2_other=0.00__zlow=0.0__zhigh=6.0"]
     )
-    redshift_constant_pair = (
+    redshift_constant_catalog_pair = (
         redshift_catalogs["g1_slice=0.02__g2_slice=0.00__g1_other=0.00__g2_other=0.00__zlow=0.0__zhigh=6.0"],
         redshift_catalogs["g1_slice=-0.02__g2_slice=0.00__g1_other=0.00__g2_other=0.00__zlow=0.0__zhigh=6.0"]
     )
 
-    imsim_pairs = [
+    shear_catalog_pairs = [
         (
-            imsim_catalogs["g1_slice=0.02__g2_slice=0.00__g1_other=-0.02__g2_other=0.00__zlow=0.0__zhigh=0.3"],
-            imsim_catalogs["g1_slice=-0.02__g2_slice=0.00__g1_other=0.00__g2_other=0.00__zlow=0.0__zhigh=6.0"]
+            shear_catalogs["g1_slice=0.02__g2_slice=0.00__g1_other=-0.02__g2_other=0.00__zlow=0.0__zhigh=0.3"],
+            shear_catalogs["g1_slice=-0.02__g2_slice=0.00__g1_other=0.00__g2_other=0.00__zlow=0.0__zhigh=6.0"]
         ),
         (
-            imsim_catalogs["g1_slice=0.02__g2_slice=0.00__g1_other=-0.02__g2_other=0.00__zlow=0.3__zhigh=0.6"],
-            imsim_catalogs["g1_slice=-0.02__g2_slice=0.00__g1_other=0.00__g2_other=0.00__zlow=0.0__zhigh=6.0"]
+            shear_catalogs["g1_slice=0.02__g2_slice=0.00__g1_other=-0.02__g2_other=0.00__zlow=0.3__zhigh=0.6"],
+            shear_catalogs["g1_slice=-0.02__g2_slice=0.00__g1_other=0.00__g2_other=0.00__zlow=0.0__zhigh=6.0"]
         ),
         (
-            imsim_catalogs["g1_slice=0.02__g2_slice=0.00__g1_other=-0.02__g2_other=0.00__zlow=0.6__zhigh=0.9"],
-            imsim_catalogs["g1_slice=-0.02__g2_slice=0.00__g1_other=0.00__g2_other=0.00__zlow=0.0__zhigh=6.0"]
+            shear_catalogs["g1_slice=0.02__g2_slice=0.00__g1_other=-0.02__g2_other=0.00__zlow=0.6__zhigh=0.9"],
+            shear_catalogs["g1_slice=-0.02__g2_slice=0.00__g1_other=0.00__g2_other=0.00__zlow=0.0__zhigh=6.0"]
         ),
         (
-            imsim_catalogs["g1_slice=0.02__g2_slice=0.00__g1_other=-0.02__g2_other=0.00__zlow=0.9__zhigh=1.2"],
-            imsim_catalogs["g1_slice=-0.02__g2_slice=0.00__g1_other=0.00__g2_other=0.00__zlow=0.0__zhigh=6.0"]
+            shear_catalogs["g1_slice=0.02__g2_slice=0.00__g1_other=-0.02__g2_other=0.00__zlow=0.9__zhigh=1.2"],
+            shear_catalogs["g1_slice=-0.02__g2_slice=0.00__g1_other=0.00__g2_other=0.00__zlow=0.0__zhigh=6.0"]
         ),
         (
-            imsim_catalogs["g1_slice=0.02__g2_slice=0.00__g1_other=-0.02__g2_other=0.00__zlow=1.2__zhigh=1.5"],
-            imsim_catalogs["g1_slice=-0.02__g2_slice=0.00__g1_other=0.00__g2_other=0.00__zlow=0.0__zhigh=6.0"]
+            shear_catalogs["g1_slice=0.02__g2_slice=0.00__g1_other=-0.02__g2_other=0.00__zlow=1.2__zhigh=1.5"],
+            shear_catalogs["g1_slice=-0.02__g2_slice=0.00__g1_other=0.00__g2_other=0.00__zlow=0.0__zhigh=6.0"]
         ),
         (
-            imsim_catalogs["g1_slice=0.02__g2_slice=0.00__g1_other=-0.02__g2_other=0.00__zlow=1.5__zhigh=1.8"],
-            imsim_catalogs["g1_slice=-0.02__g2_slice=0.00__g1_other=0.00__g2_other=0.00__zlow=0.0__zhigh=6.0"]
+            shear_catalogs["g1_slice=0.02__g2_slice=0.00__g1_other=-0.02__g2_other=0.00__zlow=1.5__zhigh=1.8"],
+            shear_catalogs["g1_slice=-0.02__g2_slice=0.00__g1_other=0.00__g2_other=0.00__zlow=0.0__zhigh=6.0"]
         ),
         (
-            imsim_catalogs["g1_slice=0.02__g2_slice=0.00__g1_other=-0.02__g2_other=0.00__zlow=1.8__zhigh=2.1"],
-            imsim_catalogs["g1_slice=-0.02__g2_slice=0.00__g1_other=0.00__g2_other=0.00__zlow=0.0__zhigh=6.0"]
+            shear_catalogs["g1_slice=0.02__g2_slice=0.00__g1_other=-0.02__g2_other=0.00__zlow=1.8__zhigh=2.1"],
+            shear_catalogs["g1_slice=-0.02__g2_slice=0.00__g1_other=0.00__g2_other=0.00__zlow=0.0__zhigh=6.0"]
         ),
         (
-            imsim_catalogs["g1_slice=0.02__g2_slice=0.00__g1_other=-0.02__g2_other=0.00__zlow=2.1__zhigh=2.4"],
-            imsim_catalogs["g1_slice=-0.02__g2_slice=0.00__g1_other=0.00__g2_other=0.00__zlow=0.0__zhigh=6.0"]
+            shear_catalogs["g1_slice=0.02__g2_slice=0.00__g1_other=-0.02__g2_other=0.00__zlow=2.1__zhigh=2.4"],
+            shear_catalogs["g1_slice=-0.02__g2_slice=0.00__g1_other=0.00__g2_other=0.00__zlow=0.0__zhigh=6.0"]
         ),
         (
-            imsim_catalogs["g1_slice=0.02__g2_slice=0.00__g1_other=-0.02__g2_other=0.00__zlow=2.4__zhigh=2.7"],
-            imsim_catalogs["g1_slice=-0.02__g2_slice=0.00__g1_other=0.00__g2_other=0.00__zlow=0.0__zhigh=6.0"]
+            shear_catalogs["g1_slice=0.02__g2_slice=0.00__g1_other=-0.02__g2_other=0.00__zlow=2.4__zhigh=2.7"],
+            shear_catalogs["g1_slice=-0.02__g2_slice=0.00__g1_other=0.00__g2_other=0.00__zlow=0.0__zhigh=6.0"]
         ),
         (
-            imsim_catalogs["g1_slice=0.02__g2_slice=0.00__g1_other=-0.02__g2_other=0.00__zlow=2.7__zhigh=6.0"],
-            imsim_catalogs["g1_slice=-0.02__g2_slice=0.00__g1_other=0.00__g2_other=0.00__zlow=0.0__zhigh=6.0"]
+            shear_catalogs["g1_slice=0.02__g2_slice=0.00__g1_other=-0.02__g2_other=0.00__zlow=2.7__zhigh=6.0"],
+            shear_catalogs["g1_slice=-0.02__g2_slice=0.00__g1_other=0.00__g2_other=0.00__zlow=0.0__zhigh=6.0"]
         ),
     ]
-    redshift_pairs = [
+    redshift_catalog_pairs = [
         (
             redshift_catalogs["g1_slice=0.02__g2_slice=0.00__g1_other=-0.02__g2_other=0.00__zlow=0.0__zhigh=0.3"],
             redshift_catalogs["g1_slice=-0.02__g2_slice=0.00__g1_other=0.00__g2_other=0.00__zlow=0.0__zhigh=6.0"]
@@ -352,26 +319,26 @@ def main():
     ]
 
     # /// FIXME
-    # process_pair(*imsim_constant_pair, *redshift_constant_pair, **kwargs)
+    # process_pair(*shear_constant_pair, *redshift_constant_pair, **kwargs)
     # ///
 
     results = {}
     futures = {}
-    with concurrent.futures.ProcessPoolExecutor(max_workers=max(32, len(imsim_pairs) + 1)) as executor:
+    with concurrent.futures.ProcessPoolExecutor(max_workers=max(32, len(shear_catalog_pairs) + 1)) as executor:
         # constant shear
-        _future = executor.submit(process_pair, *imsim_constant_pair, *redshift_constant_pair, **kwargs)
+        _future = executor.submit(process_pair, *shear_constant_catalog_pair, *redshift_constant_catalog_pair, **kwargs)
         # we let alpha=-1 represent the constant shear simulation
         futures[-1] = _future
 
         # redshift-dependent shear
-        for alpha, (imsim_pair, redshift_pair) in enumerate(zip(imsim_pairs, redshift_pairs)):
-            _future = executor.submit(process_pair, *imsim_pair, *redshift_pair, **kwargs)
+        for alpha, (shear_catalog_pair, redshift_catalog_pair) in enumerate(zip(shear_catalog_pairs, redshift_catalog_pairs)):
+            _future = executor.submit(process_pair, *shear_catalog_pair, *redshift_catalog_pair, **kwargs)
             futures[alpha] = _future
 
         for alpha, future in futures.items():
             results[alpha] = future.result()
 
-    xi = list(itertools.product(ALPHA_BINS, TOMOGRAPHIC_BINS))
+    xi = list(itertools.product(ALPHA_BINS, lib.const.TOMOGRAPHIC_BINS))
     mean_params = np.array(xi)
     cov = list(itertools.product(xi, xi))
     cov_params = np.array(cov).reshape(len(xi), len(xi), 2, 2)
@@ -427,19 +394,26 @@ def main():
 
     # ---
 
-    with h5py.File(redshift_constant_pair[0], "r") as hf_redshift_plus, h5py.File(redshift_constant_pair[1], "r") as hf_redshift_minus:
-        _zbinsc_plus = hf_redshift_plus["sompz"]["pzdata_weighted_S005"]["zbinsc"][:]
-        _zbinsc_minus = hf_redshift_minus["sompz"]["pzdata_weighted_S005"]["zbinsc"][:]
+    zbinsc = lib.const.ZVALS
 
-        np.testing.assert_array_equal(_zbinsc_plus, _zbinsc_minus)
-        zbinsc = _zbinsc_plus
+    with h5py.File(redshift_constant_catalog_pair[0], "r") as hf_redshift_plus, h5py.File(redshift_constant_catalog_pair[1], "r") as hf_redshift_minus:
+        # _zbinsc_plus = hf_redshift_plus["sompz"]["pzdata_weighted_sompz_dz005"]["zbinsc"][:]
+        # _zbinsc_minus = hf_redshift_minus["sompz"]["pzdata_weighted_sompz_dz005"]["zbinsc"][:]
 
-        nz = {}
-        for tomographic_bin in TOMOGRAPHIC_BINS:
-            _nz_plus = hf_redshift_plus["sompz"]["pzdata_weighted_S005"][f"bin{tomographic_bin}"][:]
-            _nz_minus = hf_redshift_minus["sompz"]["pzdata_weighted_S005"][f"bin{tomographic_bin}"][:]
-            _nz = (_nz_plus + _nz_minus) / 2
-            nz[f"bin{tomographic_bin}"] = _nz
+        # np.testing.assert_array_equal(_zbinsc_plus, _zbinsc_minus)
+        # zbinsc = _zbinsc_plus
+
+        nz_sompz = {}
+        for tomographic_bin in lib.const.TOMOGRAPHIC_BINS:
+            _nz_sompz_plus = hf_redshift_plus["sompz"]["pzdata_weighted_sompz_dz005"][f"bin{tomographic_bin}"][:]
+            _nz_sompz_minus = hf_redshift_minus["sompz"]["pzdata_weighted_sompz_dz005"][f"bin{tomographic_bin}"][:]
+            _nz_sompz = (_nz_sompz_plus + _nz_sompz_minus) / 2
+            nz_sompz[f"bin{tomographic_bin}"] = _nz_sompz
+
+            _nz_true_plus = hf_redshift_plus["true"]["pzdata_weighted_true_dz005"][f"bin{tomographic_bin}"][:]
+            _nz_true_minus = hf_redshift_minus["true"]["pzdata_weighted_true_dz005"][f"bin{tomographic_bin}"][:]
+            _nz_true = (_nz_true_plus + _nz_true_minus) / 2
+            nz_true[f"bin{tomographic_bin}"] = _nz_true
 
     # ---
 
@@ -455,11 +429,21 @@ def main():
             groupname = f"bin{alpha_k}"
             alpha_group.create_dataset(groupname, data=alpha_v)
 
-        redshift_group = hf.create_group("tomography")
-        redshift_group.create_dataset("zbinsc", data=zbinsc)
-        for tomographic_bin in TOMOGRAPHIC_BINS:
+        redshift_group = hf.create_group("redshift")
+        # redshift_group.create_dataset("zbinsc", data=zbinsc)
+
+        sompz_redshift_group = redshift_group.create_group("sompz")
+        true_redshift_group = redshift_group.create_group("true")
+
+        for tomographic_bin in lib.const.TOMOGRAPHIC_BINS:
             groupname = f"bin{tomographic_bin}"
-            redshift_group.create_dataset(groupname, data=nz[groupname])
+            # redshift_group.create_dataset(groupname, data=nz_sompz[groupname])
+
+            sompz_redshift_group.create_dataset(groupname, data=nz_sompz[groupname])
+            sompz_redshift_group.create_dataset("zbinsc", data=zbinsc)
+
+            true_redshift_group.create_dataset(groupname, data=nz_true[groupname])
+            true_redshift_group.create_dataset("zbinsc", data=zbinsc)
 
 
 if __name__ == "__main__":
