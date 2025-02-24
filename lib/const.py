@@ -52,7 +52,7 @@ for _truth_file in glob.glob(f"{TRUTH_DIR}/*.fits"):
 SIM_SHEAR_DIR = "/global/cfs/cdirs/des/y6-image-sims/fiducial/"
 SIM_SHEAR_CATALOGS = {
     shear_step: os.path.join(
-        SIM_IMSIM_DIR,
+        SIM_SHEAR_DIR,
         shear_step,
         "metadetect_cutsv6_all.h5",
     )
