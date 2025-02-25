@@ -39,7 +39,8 @@ def _find_shear_response(dat, sel, wgt_dict, snmin, snmax, sizemin, sizemax, ste
     smoothing = True
     if smoothing:
         from scipy.ndimage import gaussian_filter
-        smooth_response = gaussian_filter(wgt_dict['response'], sigma=2.0)
+        # smooth_response = gaussian_filter(wgt_dict['response'], sigma=2.0)
+        smooth_response = wgt_dict["response"]
         # shear_wgt = (smooth_response/wgt_dict['meanes'])**2
     indexx, indexy = assign_loggrid(np.array(dat[mdet_mom+'_s2n'][sel]), np.array(dat[mdet_mom+'_T_ratio'][sel]), snmin, snmax, steps, sizemin, sizemax, steps)
     response = np.array([smooth_response[x, y] for x, y in zip(indexx, indexy)])
