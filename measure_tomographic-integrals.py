@@ -324,7 +324,7 @@ def main():
 
     results = {}
     futures = {}
-    with concurrent.futures.ProcessPoolExecutor(max_workers=max(32, len(shear_catalog_pairs) + 1)) as executor:
+    with concurrent.futures.ProcessPoolExecutor(max_workers=min(32, len(shear_catalog_pairs) + 1)) as executor:
         # constant shear
         _future = executor.submit(process_pair, *shear_constant_catalog_pair, *redshift_constant_catalog_pair, **kwargs)
         # we let alpha=-1 represent the constant shear simulation
@@ -392,6 +392,18 @@ def main():
     # cov /= dg_true**2
     # mean /= dg_true
 
+    with h5py.File("N_gamma_alpha.hdf5", "w") as hf:
+        shear_group = hf.create_group("shear")
+        shear_group.create_dataset("mean_params", data=mean_params)
+        shear_group.create_dataset("mean", data=mean)
+        shear_group.create_dataset("cov_params", data=cov_params)
+        shear_group.create_dataset("cov", data=cov)
+
+        alpha_group = hf.create_group("alpha")
+        for alpha_k, alpha_v in ALPHA.items():
+            groupname = f"bin{alpha_k}"
+            alpha_group.create_dataset(groupname, data=alpha_v)
+
     # ---
 
     zbinsc = lib.const.ZVALS
@@ -410,24 +422,14 @@ def main():
             _nz_sompz = (_nz_sompz_plus + _nz_sompz_minus) / 2
             nz_sompz[f"bin{tomographic_bin}"] = _nz_sompz
 
-            _nz_true_plus = hf_redshift_plus["true"]["pzdata_weighted_true_dz005"][f"bin{tomographic_bin}"][:]
-            _nz_true_minus = hf_redshift_minus["true"]["pzdata_weighted_true_dz005"][f"bin{tomographic_bin}"][:]
+            _nz_true_plus = hf_redshift_plus["sompz"]["pzdata_weighted_true_dz005"][f"bin{tomographic_bin}"][:]
+            _nz_true_minus = hf_redshift_minus["sompz"]["pzdata_weighted_true_dz005"][f"bin{tomographic_bin}"][:]
             _nz_true = (_nz_true_plus + _nz_true_minus) / 2
             nz_true[f"bin{tomographic_bin}"] = _nz_true
 
     # ---
 
-    with h5py.File("N_gamma_alpha.hdf5", "w") as hf:
-        shear_group = hf.create_group("shear")
-        shear_group.create_dataset("mean_params", data=mean_params)
-        shear_group.create_dataset("mean", data=mean)
-        shear_group.create_dataset("cov_params", data=cov_params)
-        shear_group.create_dataset("cov", data=cov)
-
-        alpha_group = hf.create_group("alpha")
-        for alpha_k, alpha_v in ALPHA.items():
-            groupname = f"bin{alpha_k}"
-            alpha_group.create_dataset(groupname, data=alpha_v)
+    with h5py.File("N_gamma_alpha.hdf5", "r+") as hf:
 
         redshift_group = hf.create_group("redshift")
         # redshift_group.create_dataset("zbinsc", data=zbinsc)
