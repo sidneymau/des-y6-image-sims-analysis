@@ -416,6 +416,7 @@ def main():
         # zbinsc = _zbinsc_plus
 
         nz_sompz = {}
+        nz_true = {}
         for tomographic_bin in lib.const.TOMOGRAPHIC_BINS:
             _nz_sompz_plus = hf_redshift_plus["sompz"]["pzdata_weighted_sompz_dz005"][f"bin{tomographic_bin}"][:]
             _nz_sompz_minus = hf_redshift_minus["sompz"]["pzdata_weighted_sompz_dz005"][f"bin{tomographic_bin}"][:]
@@ -437,15 +438,15 @@ def main():
         sompz_redshift_group = redshift_group.create_group("sompz")
         true_redshift_group = redshift_group.create_group("true")
 
+        sompz_redshift_group.create_dataset("zbinsc", data=zbinsc)
+        true_redshift_group.create_dataset("zbinsc", data=zbinsc)
+
         for tomographic_bin in lib.const.TOMOGRAPHIC_BINS:
             groupname = f"bin{tomographic_bin}"
             # redshift_group.create_dataset(groupname, data=nz_sompz[groupname])
 
             sompz_redshift_group.create_dataset(groupname, data=nz_sompz[groupname])
-            sompz_redshift_group.create_dataset("zbinsc", data=zbinsc)
-
             true_redshift_group.create_dataset(groupname, data=nz_true[groupname])
-            true_redshift_group.create_dataset("zbinsc", data=zbinsc)
 
 
 if __name__ == "__main__":
