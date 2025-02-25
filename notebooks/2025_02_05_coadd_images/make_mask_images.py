@@ -2,10 +2,8 @@ import os
 import concurrent.futures
 
 import fitsio
-from matplotlib import cm
 import numpy as np
-from PIL import Image
-import PIL.ImageOps
+from PIL import Image, ImageOps
 
 
 MASK_DIR = "/pscratch/sd/s/smau/fiducial_masks"
@@ -25,12 +23,40 @@ def _main(tilename):
     with fitsio.FITS(_mask) as fits:
         mask = fits[1].read()
 
-    bitmask = (mask > 1)
-    with Image.fromarray(bitmask) as im:
-        im = PIL.ImageOps.flip(im)
-        im = im.convert("L")
-        im = PIL.ImageOps.invert(im)
-        im.save(outfile)
+    # bitmask = (mask > 1)
+    # with Image.fromarray(bitmask) as im:
+    #     im = ImageOps.flip(im)
+    #     im = im.convert("L")
+    #     im = ImageOps.invert(im)
+    #     im.save(outfile)
+
+    with Image.fromarray((mask & (~2**2)) != 1) as _im_all:
+        _im_all = ImageOps.invert(_im_all)
+        # im_all = im_all.convert("L")
+        _im_all = ImageOps.flip(_im_all)
+        
+    with Image.fromarray(~(mask & (2**2) == 0)) as _im_gaia:
+        _im_gaia = ImageOps.invert(_im_gaia)
+        # im_gaia = im_gaia.convert("L")
+        _im_gaia = ImageOps.flip(_im_gaia)
+        
+    with Image.fromarray(~(mask & (2**2) == 0)) as im_alpha:
+        # im_alpha = im_alpha.convert("L")
+        im_alpha = ImageOps.flip(im_alpha)
+
+    # this appears backwards -- this is because we are working in an inverted
+    # color space with the masks
+    im_all = _im_all.convert("LA")
+    im_gaia = _im_gaia.convert("LA")
+    im_all.putalpha(255 // 2)
+    im_gaia.putalpha(im_alpha)
+    
+    im = Image.alpha_composite(
+        im_gaia.convert("RGBA"),
+        im_all.convert("RGBA"),
+    ).convert("L")
+
+    im.save(outfile)
 
 
 def main():
