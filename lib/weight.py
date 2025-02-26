@@ -70,6 +70,6 @@ def _wmean(q,w):
 
 get_shear_weights = functools.partial(
     _get_shear_weights,
-    gal_weight_file="/pscratch/sd/m/myamamot/des-y6-analysis/y6_measurement/v6_UNBLINDED/inverse_variance_weight_v6.pickle",
+    gal_weight_file="/global/cfs/cdirs/des/y6-image-sims/inverse_variance_weight_v6.pickle",
 )
 
