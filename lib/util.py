@@ -11,7 +11,6 @@ import h5py
 import hpgeom as hpg
 import healsparse
 import yaml
-import twopoint
 from scipy import interpolate, signal
 
 from esutil.pbar import PBar
