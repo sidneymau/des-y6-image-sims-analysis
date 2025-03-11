@@ -1,0 +1,72 @@
+name: tests & lint
+
+on:
+  push:
+    branches:
+      - main
+  pull_request: null
+
+env:
+  PY_COLORS: "1"
+
+jobs:
+  tests:
+    name: tests
+    runs-on: "ubuntu-latest"
+    defaults:
+      run:
+        shell: bash -el {0}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+
+      - uses: mamba-org/setup-micromamba@0dea6379afdaffa5d528b3d1dabc45da37f443fc # v2.0.4
+        with:
+          environment-file: environment.yml
+          environment-name: des-y6-imsim-analysis
+          create-args: >-
+            python=3.12
+          condarc: |
+            channels:
+              - conda-forge
+            channel_priority: strict
+            show_channel_urls: true
+
+      - name: configure conda and install code
+        run: |
+          python -m pip install -v --no-deps --no-build-isolation -e .
+
+      - name: test
+        shell: bash -el {0}
+        run: |
+          pytest -vvs des_y6_imsim_analysis
+
+  lint:
+    name: lint
+    runs-on: "ubuntu-latest"
+    defaults:
+      run:
+        shell: bash -el {0}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+
+      - uses: mamba-org/setup-micromamba@0dea6379afdaffa5d528b3d1dabc45da37f443fc # v2.0.4
+        with:
+          environment-file: environment.yml
+          environment-name: des-y6-imsim-analysis
+          create-args: >-
+            python=3.12
+          condarc: |
+            channels:
+              - conda-forge
+            channel_priority: strict
+            show_channel_urls: true
+
+      - name: lint
+        shell: bash -el {0}
+        run: |
+          ruff check des_y6_imsim_analysis
+          ruff format des_y6_imsim_analysis
