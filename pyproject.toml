@@ -1,0 +1,32 @@
+[build-system]
+requires = [
+    "setuptools>=45",
+    "tomli>=1.0.0; python_version < '3.11'",
+]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "des-y6-imsim-analysis"
+authors = [
+    {name = "DES Y6", email = "des@des.des"},
+]
+description = "DES Y6 imsim analysis code"
+license = {file = "LICENSE"}
+readme = "README.md"
+version = "2025.3.11"
+
+[project.urls]
+home = "https://github.com/sidneymau/des-y6-image-sims-analysis"
+
+[tool.setuptools]
+include-package-data = true
+zip-safe = false
+packages = {find = {exclude=["*.py", "tests*", "lib*", "notebooks*", "plots*", "data*"]}}
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W"]
+ignore = ["E501"]
+preview = true
+
+[tool.ruff.lint.pycodestyle]
+max-line-length = 120
