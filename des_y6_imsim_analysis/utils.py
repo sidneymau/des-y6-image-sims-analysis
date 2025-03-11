@@ -69,7 +69,9 @@ def read_data(filename, redshift_type="true"):
     with h5py.File(filename) as d:
         mn = d["shear/mean"][:].astype(np.float64)
         cov = d["shear/cov"][:].astype(np.float64)
-        mn_pars = tuple(tuple(v) for v in d["shear/mean_params"][:].astype(np.int64).tolist())
+        mn_pars = tuple(
+            tuple(v) for v in d["shear/mean_params"][:].astype(np.int64).tolist()
+        )
         zbins = []
         for zbin in range(-1, 10):
             zbins.append(d[f"alpha/bin{zbin}"][:].astype(np.float64))
@@ -386,9 +388,7 @@ def plot_results(*, model_module, model_data, samples=None, map_params=None):
                 nind = mn_pars.index((j, bi))
                 bin_zmin, bin_zmax = zbins[j + 1]
                 bin_dz = bin_zmax - bin_zmin
-                ngamma_int.append(
-                    sompz_integral(ngamma, bin_zmin, bin_zmax) / bin_dz
-                )
+                ngamma_int.append(sompz_integral(ngamma, bin_zmin, bin_zmax) / bin_dz)
             ngamma_ints.append(ngamma_int)
         ngamma_ints = np.array(ngamma_ints)
 
@@ -429,7 +429,11 @@ def plot_results(*, model_module, model_data, samples=None, map_params=None):
             linestyle="dashed",
         )
         axhist.plot(
-            z, ngamma_mn / DZ, drawstyle="steps-mid", color="black", label=r"$n_\gamma(z)$"
+            z,
+            ngamma_mn / DZ,
+            drawstyle="steps-mid",
+            color="black",
+            label=r"$n_\gamma(z)$",
         )
         for i in range(10):
             nind = mn_pars.index((i, bi))

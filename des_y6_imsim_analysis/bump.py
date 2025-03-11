@@ -6,12 +6,11 @@ import jax.numpy as jnp  # noqa: E402
 import numpy as np  # noqa: E402
 import numpyro  # noqa: E402
 import numpyro.distributions as dist  # noqa: E402
-from jax.nn import sigmoid  # noqa: E402
-
 from des_y6_nz_modeling import (  # noqa: E402
-    sompz_integral,
     GMODEL_COSMOS_NZ,
+    sompz_integral,
 )
+from jax.nn import sigmoid  # noqa: E402
 
 
 def _bump(z, a, b, w):
@@ -20,9 +19,18 @@ def _bump(z, a, b, w):
 
 
 def model_parts_smooth(
-    *, params, pts, z, nz=None, mn_pars=None, zbins=None, mn=None, cov=None, fixed_param_values=None,
+    *,
+    params,
+    pts,
+    z,
+    nz=None,
+    mn_pars=None,
+    zbins=None,
+    mn=None,
+    cov=None,
+    fixed_param_values=None,
 ):
-    gtemp = GMODEL_COSMOS_NZ[:z.shape[0]]
+    gtemp = GMODEL_COSMOS_NZ[: z.shape[0]]
     gtemp = gtemp / gtemp.sum()
 
     fixed_param_values = fixed_param_values or {}
@@ -33,7 +41,9 @@ def model_parts_smooth(
         model_parts[i] = {}
         fvals = jnp.zeros_like(z)
         for j in range(pts.shape[1]):
-            fvals += params[f"a{j}_b{i}"] * _bump(z, pts[i, j, 0], pts[i, j, 1], params["w"])
+            fvals += params[f"a{j}_b{i}"] * _bump(
+                z, pts[i, j, 0], pts[i, j, 1], params["w"]
+            )
         model_parts[i]["F"] = fvals
 
         g = params.get(f"g_b{i}", 0.0)
@@ -42,7 +52,9 @@ def model_parts_smooth(
     return model_parts
 
 
-def model_mean_smooth(*, pts, z, nz, mn_pars, zbins, params, mn=None, cov=None, fixed_param_values=None):
+def model_mean_smooth(
+    *, pts, z, nz, mn_pars, zbins, params, mn=None, cov=None, fixed_param_values=None
+):
     model_parts = model_parts_smooth(
         pts=pts,
         z=z,
@@ -60,7 +72,9 @@ def model_mean_smooth(*, pts, z, nz, mn_pars, zbins, params, mn=None, cov=None, 
     return jnp.stack(ngammas)
 
 
-def model_mean(*, pts, z, nz, mn_pars, zbins, params, mn=None, cov=None, fixed_param_values=None):
+def model_mean(
+    *, pts, z, nz, mn_pars, zbins, params, mn=None, cov=None, fixed_param_values=None
+):
     ngammas = model_mean_smooth(
         pts=pts,
         z=z,
@@ -83,15 +97,40 @@ def model_mean(*, pts, z, nz, mn_pars, zbins, params, mn=None, cov=None, fixed_p
 
 
 def model_mean_smooth_tomobin(
-    *, pts, z, nz, mn_pars, zbins, params, tbind, mn=None, cov=None, fixed_param_values=None
+    *,
+    pts,
+    z,
+    nz,
+    mn_pars,
+    zbins,
+    params,
+    tbind,
+    mn=None,
+    cov=None,
+    fixed_param_values=None,
 ):
     model_mn = model_mean_smooth(
-        pts=pts, z=z, nz=nz, mn_pars=mn_pars, zbins=zbins, params=params, fixed_param_values=fixed_param_values,
+        pts=pts,
+        z=z,
+        nz=nz,
+        mn_pars=mn_pars,
+        zbins=zbins,
+        params=params,
+        fixed_param_values=fixed_param_values,
     )
     return np.asarray(model_mn)[tbind]
 
 
-def model(pts=None, z=None, nz=None, mn=None, cov=None, mn_pars=None, zbins=None, fixed_param_values=None):
+def model(
+    pts=None,
+    z=None,
+    nz=None,
+    mn=None,
+    cov=None,
+    mn_pars=None,
+    zbins=None,
+    fixed_param_values=None,
+):
     assert pts is not None
     assert nz is not None
     assert mn is not None
@@ -125,7 +164,9 @@ def model(pts=None, z=None, nz=None, mn=None, cov=None, mn_pars=None, zbins=None
     )
 
 
-def make_model_data(*, z, nzs, mn, cov, mn_pars, zbins, fixed_param_values=None, num_bins=-1):
+def make_model_data(
+    *, z, nzs, mn, cov, mn_pars, zbins, fixed_param_values=None, num_bins=-1
+):
     """Create the dict of model data.
 
     Parameters
@@ -172,10 +213,10 @@ def make_model_data(*, z, nzs, mn, cov, mn_pars, zbins, fixed_param_values=None,
                     [6.01],
                 ]
             )
-            assert be.shape[0] == num_bins+1
+            assert be.shape[0] == num_bins + 1
             _pts = []
             for i in range(num_bins):
-                _pts.append(be[i:i+2])
+                _pts.append(be[i : i + 2])
             pts.append(_pts)
 
         pts = np.array(pts)
