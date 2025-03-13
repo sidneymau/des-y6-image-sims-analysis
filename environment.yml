@@ -1,0 +1,12 @@
+name: des-y6-imsim-analysis
+dependencies:
+  - scipy
+  - numpy
+  - jax
+  - numpyro
+  - ultraplot
+  - ruff
+  - pytest
+  - h5py
+  - pip
+  - setuptools
