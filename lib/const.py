@@ -79,6 +79,15 @@ SIM_REDSHIFT_CATALOGS = {
     for shear_step in SHEAR_STEPS
 }
 
+SIM_WEIGHT_DIR = "/global/cfs/cdirs/des/y6-image-sims/fiducial-weights"
+SIM_WEIGHT_CATALOGS = {
+    shear_step: os.path.join(
+        SIM_WEIGHT_DIR,
+        f"weights_{shear_step}.hdf5",
+    )
+    for shear_step in SHEAR_STEPS
+}
+
 ZEROPOINT = 30
 
 TOMOGRAPHIC_BINS = [0, 1, 2, 3]
