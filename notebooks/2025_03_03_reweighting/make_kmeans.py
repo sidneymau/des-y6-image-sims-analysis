@@ -124,22 +124,48 @@ def main():
             sample_weight=W,
         )
 
-        scaler_file = f"scaler_{tomographic_bin}.pickle"
-        with open(scaler_file, "wb") as handle:
-            pickle.dump(scaler, handle, protocol=pickle.HIGHEST_PROTOCOL)
+        labels = np.unique(kmeans.labels_)
 
+        pipeline = Pipeline([("scaler", scaler), ("kmeans", kmeans)])
+
+        y_sim_plus = pipeline.predict(X_sim_plus)
+        y_sim_minus = pipeline.predict(X_sim_minus)
+        y_y6 = pipeline.predict(X_y6)
+        
+        w_sim_plus = np.bincount(y_sim_plus)
+        n_sim_plus = np.sum(w_sim_plus)
+        
+        w_sim_minus = np.bincount(y_sim_minus)
+        n_sim_minus = np.sum(w_sim_plus)
+
+        w_sim = w_sim_plus + w_sim_minus
+        n_sim = n_sim_plus + n_sim_minus
+
+        f_sim = w_sim / n_sim
+        
+        w_y6 = np.bincount(y_y6)
+        n_y6 = np.sum(w_y6)
+
+        f_y6 = w_y6 / n_y6
+
+        _w = f_y6 / f_sim
+
+        w = _w / np.sum(_w)
+
+        neighbor_weights = {
+            "labels": labels,
+            "weights": w,
+            "pipeline": pipeline,
+        }
+    
         kmeans_file = f"kmeans_{tomographic_bin}.pickle"
         with open(kmeans_file, "wb") as handle:
-            pickle.dump(kmeans, handle, protocol=pickle.HIGHEST_PROTOCOL)
+            pickle.dump(pipeline, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
-        # pipe = Pipeline(
-        #     [
-        #         ("scaler", scaler),
-        #         ("kmeans", kmeans),
-        #     ]
-        # )
-        # pipe.set_params(kmeans__sample_weights=W)
-        # pipe.fit(X)
+        weights_file = f"weights_{tomographic_bin}.pickle"
+        with open(weights_file, "wb") as handle:
+            pickle.dump(neighbor_weights, handle, protocol=pickle.HIGHEST_PROTOCOL)
+
 
     return 0
 

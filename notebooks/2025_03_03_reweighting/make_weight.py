@@ -1,3 +1,4 @@
+import os
 import pickle
 
 import h5py
@@ -5,122 +6,85 @@ import numpy as np
 
 import lib
 
-
-N_CLUSTERS = 200
+COLUMN = "neighbor_weight"
 
 def main():
 
-    rng = np.random.default_rng(0)
-
-    w_bins = np.arange(N_CLUSTERS)
-    w_vals_y6 = {}
-    w_vals_sim = {}
+    out = {}
     weights = {}
 
-    out = {}
-
-    scalers = {}
-    kmeans = {}
-
     for tomographic_bin in lib.const.TOMOGRAPHIC_BINS:
+        weights_filename = f"weights_{tomographic_bin}.pickle"
+        with open(weights_filename, "rb") as handle:
+            weights[tomographic_bin] = pickle.load(handle)
 
-        scaler_file = f"scaler_{tomographic_bin}.pickle"
-        with open(scaler_file, "rb") as handle:
-            scalers[tomographic_bin] = pickle.load(handle)
-
-        kmeans_file = f"kmeans_{tomographic_bin}.pickle"
-        with open(kmeans_file, "rb") as handle:
-            kmeans[tomographic_bin] = pickle.load(handle)
-
-    # first, y6
-    print("Y6")
-    with (
-        h5py.File(lib.const.Y6_SHEAR_CATALOG) as shear_y6,
-        h5py.File(lib.const.Y6_REDSHIFT_CATALOG) as redshift_y6,
-        h5py.File(
-            f"/pscratch/sd/s/smau/fiducial-neighbors/neighbors_y6.hdf5",
-        ) as neighbors_y6,
-    ):
-        bhat_y6 = lib.tomography.get_tomography(shear_y6, redshift_y6, "noshear")
-
-        for tomographic_bin in lib.const.TOMOGRAPHIC_BINS:
-            _kmeans = kmeans[tomographic_bin]
-            _scaler = scalers[tomographic_bin]
-            
-            sel_y6 = (bhat_y6 == tomographic_bin)
-
-            X_y6 = np.stack(
-                [
-                    np.log10(neighbors_y6["mdet"]["noshear"]["neighbor_mag"][sel_y6]),
-                    neighbors_y6["mdet"]["noshear"]["mag"][sel_y6],
-                    neighbors_y6["mdet"]["noshear"]["neighbor_distance"][sel_y6],
-                ],
-                axis=-1,
-            )
-
-            y_y6 = _kmeans.predict(
-                _scaler.transform(X_y6)
-            )
-
-            _w = np.bincount(y_y6)
-            w_vals_y6[tomographic_bin] = _w / np.mean(_w)
-
-
-    # next, sims
     for shear_step in lib.const.SHEAR_STEPS:
         print(shear_step)
 
-        weights[shear_step] = {}
-        w_vals_sim[shear_step] = {}
+
+        neighbor_weights_filename = f"weights_{shear_step}.hdf5"
+        neighbor_weights_file = os.path.join(
+            "/pscratch/sd/s/smau/fiducial-weights",
+            neighbor_weights_filename,
+        )
 
         with (
-            h5py.File(lib.const.SIM_SHEAR_CATALOGS[shear_step]) as shear_sim,
-            h5py.File(lib.const.SIM_REDSHIFT_CATALOGS[shear_step]) as redshift_sim,
-            h5py.File(
-                f"/pscratch/sd/s/smau/fiducial-neighbors/neighbors_{shear_step}.hdf5",
-            ) as neighbors_sim,
+            h5py.File(lib.const.SIM_SHEAR_CATALOGS[shear_step], "r") as shear_sim,
+            h5py.File(lib.const.SIM_REDSHIFT_CATALOGS[shear_step], "r") as redshift_sim,
+            h5py.File(f"/pscratch/sd/s/smau/fiducial-neighbors/neighbors_{shear_step}.hdf5", "r") as neighbors_sim,
+            h5py.File(neighbor_weights_file, "a") as neighbor_weights_sim,
         ):
-            out[shear_step] = np.full(shear_sim["mdet/noshear"]["uid"].shape, np.nan)
-            bhat_sim = lib.tomography.get_tomography(shear_sim, redshift_sim, "noshear")
 
-            for tomographic_bin in lib.const.TOMOGRAPHIC_BINS:
+            _mdet_group = neighbor_weights_sim.get("mdet")
+            if _mdet_group is None:
+                _mdet_group = neighbor_weights_sim.create_group("mdet")
 
-                _scaler = scalers[tomographic_bin]
-                _kmeans = kmeans[tomographic_bin]
-
-                sel_sim = (bhat_sim == tomographic_bin)
-
-                X_sim = np.stack(
-                    [
-                        np.log10(neighbors_sim["mdet"]["noshear"]["neighbor_mag"][sel_sim]),
-                        neighbors_sim["mdet"]["noshear"]["mag"][sel_sim],
-                        neighbors_sim["mdet"]["noshear"]["neighbor_distance"][sel_sim],
-                    ],
-                    axis=-1,
-                )
-                y_sim = _kmeans.predict(_scaler.transform(X_sim))
-
-                _w = np.bincount(y_sim)
-                w_vals_sim[shear_step][tomographic_bin] = _w / np.mean(_w)
-
-                # TODO renoramlize weights here
-                _weights = w_vals_y6[tomographic_bin] / w_vals_sim[shear_step][tomographic_bin]
-                _weights = np.ma.masked_invalid(_weights)
+            for mdet_step in lib.const.MDET_STEPS:
 
 
-                _ind = np.digitize(
-                    y_sim,
-                    w_bins,
-                    right=True,
-                )
+                _shear_group = _mdet_group.get(mdet_step)
+                if _shear_group is None:
+                    _shear_group = _mdet_group.create_group(mdet_step)
+                
+                _dataset = _shear_group.get(COLUMN)
+                if _dataset is None:
+                    _n = shear_sim["mdet"][mdet_step]["uid"].len()
+                    _data = np.full(_n, np.nan)
+                    _shear_group.create_dataset(COLUMN, data=_data)
+                    _dataset = _shear_group[COLUMN]
 
-                weights[shear_step][tomographic_bin] = _weights[_ind]
-                out[shear_step][sel_sim] = _weights[_ind]
+                    del _data
+                
+                bhat_sim = lib.tomography.get_tomography(shear_sim, redshift_sim, mdet_step)
+    
+                for tomographic_bin in lib.const.TOMOGRAPHIC_BINS:
+    
+                    _weights = weights[tomographic_bin]
+                    _labels = _weights["labels"]
+                    _w = _weights["weights"]
+                    _pipeline = _weights["pipeline"]
+    
+                    sel_sim = (bhat_sim == tomographic_bin)
+    
+                    X_sim = np.stack(
+                        [
+                            np.log10(neighbors_sim["mdet"][mdet_step]["neighbor_mag"][sel_sim]),
+                            neighbors_sim["mdet"][mdet_step]["mag"][sel_sim],
+                            neighbors_sim["mdet"][mdet_step]["neighbor_distance"][sel_sim],
+                        ],
+                        axis=-1,
+                    )
+                    y_sim = _pipeline.predict(X_sim)
+    
+                    _ind = np.digitize(
+                        y_sim,
+                        _labels,
+                        right=True,
+                    )
+    
+                    _dataset[sel_sim] = _w[_ind]
 
-    for shear_step in lib.const.SHEAR_STEPS:
-        weight_file = f"weight_{shear_step}.pickle"
-        with open(weight_file, "wb") as handle:
-            pickle.dump(out[shear_step], handle, protocol=pickle.HIGHEST_PROTOCOL)
+
 
     return 0
 
