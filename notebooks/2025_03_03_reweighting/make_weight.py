@@ -62,7 +62,8 @@ def main():
                 _scaler.transform(X_y6)
             )
 
-            w_vals_y6[tomographic_bin] = np.bincount(y_y6)
+            _w = np.bincount(y_y6)
+            w_vals_y6[tomographic_bin] = _w / np.mean(_w)
 
 
     # next, sims
@@ -99,12 +100,13 @@ def main():
                 )
                 y_sim = _kmeans.predict(_scaler.transform(X_sim))
 
-                w_vals_sim[shear_step][tomographic_bin] = np.bincount(y_sim)
+                _w = np.bincount(y_sim)
+                w_vals_sim[shear_step][tomographic_bin] = _w / np.mean(_w)
 
                 # TODO renoramlize weights here
                 _weights = w_vals_y6[tomographic_bin] / w_vals_sim[shear_step][tomographic_bin]
                 _weights = np.ma.masked_invalid(_weights)
-                # _weights /= np.mean(_weights)
+
 
                 _ind = np.digitize(
                     y_sim,
@@ -115,42 +117,13 @@ def main():
                 weights[shear_step][tomographic_bin] = _weights[_ind]
                 out[shear_step][sel_sim] = _weights[_ind]
 
-    breakpoint()
+    for shear_step in lib.const.SHEAR_STEPS:
+        weight_file = f"weight_{shear_step}.pickle"
+        with open(weight_file, "wb") as handle:
+            pickle.dump(out[shear_step], handle, protocol=pickle.HIGHEST_PROTOCOL)
 
     return 0
 
-# def predict():
-#     for shear_step in lib.const.SHEAR_STEPS:
-#         out = np.full(shear_sim_plus["mdet/noshear"]["uid"].shape, np.nan)
-#         for tomographic_bin in lib.const.TOMOGRAPHIC_BINS:
-
-#             # TODO need to load correct data for the sims now...
-#             X_sim_plus = np.stack([np.log10(neighbor_distance_sim_plus), source_magnitude_sim_plus, neighbor_magnitude_sim_plus], axis=-1)
-#             y_sim_plus = kmeans.predict(scaler.transform(X_sim_plus))
-
-#             X_sim_minus = np.stack([np.log10(neighbor_distance_sim_minus), source_magnitude_sim_minus, neighbor_magnitude_sim_minus], axis=-1)
-#             y_sim_minus = kmeans.predict(scaler.transform(X_sim_minus))
-
-#             y_y6 = kmeans.predict(scaler.transform(X_y6))
-
-#             w_bins = np.arange(N_CLUSTERS)
-
-#             w_plus = np.bincount(y_y6) / np.bincount(y_sim_plus)
-#             w_plus /= np.mean(w_plus)
-
-#             w_minus = np.bincount(y_y6) / np.bincount(y_sim_minus)
-#             w_minus /= np.mean(w_minus)
-
-
-#             _ind = np.digitize(
-#                 y_sim_plus,
-#                 w_bins,
-#                 right=True,
-#             )
-
-#             out[ind_sim_plus[:, 0]][_ind] = w_plus[_ind]
-
-#     return 0
 
 if __name__ == "__main__":
     main()
