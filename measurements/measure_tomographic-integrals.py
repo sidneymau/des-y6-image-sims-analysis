@@ -1,13 +1,13 @@
 import concurrent.futures
+import functools
 import itertools
+import operator
 import os
-from pathlib import Path
 
 import numpy as np
-import matplotlib as mpl
-import matplotlib.pyplot as plt
 import tqdm
 import h5py
+from scipy import stats
 
 import lib
 
@@ -27,6 +27,95 @@ ALPHA = {
 }
 ALPHA_BINS = [-1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
 
+# from Boyan
+ZBINSC = np.arange(0.035, 4, 0.05)
+ZEDGES = np.arange(0.01, 4.02, 0.05)
+
+
+def _compute_nz(cells, zs, weights, responses, zedges=ZEDGES, zbinsc=ZBINSC):
+    _zs = np.copy(zs)
+    _zs[_zs < zbinsc[0]] = zbinsc[0] + 0.001
+    _zs[_zs > zbinsc[-1]] = zbinsc[-1] - 0.001
+
+    _nz, _, _, _ = stats.binned_statistic_2d(
+        cells,
+        _zs,
+        weights * responses,
+        statistic="sum",
+        bins=[lib.const.CELL_IDS, zedges],
+    )
+
+    nz = {}
+    for tomographic_bin in lib.const.TOMOGRAPHIC_BINS:
+        nz[tomographic_bin] = np.sum(
+            _nz[lib.const.CELL_ASSIGNMENTS[tomographic_bin]],
+            axis=0,
+        )
+
+        # renormalize
+        nz[tomographic_bin] = nz[tomographic_bin] / np.sum(nz[tomographic_bin]) / np.diff(zedges)
+
+    return nz
+
+def compute_nz(shear_step_plus, shear_step_minus, weight_keys, zedges=ZEDGES, zbinsc=ZBINSC):
+    with (
+        h5py.File(lib.const.SIM_SHEAR_CATALOGS[shear_step_plus]) as shear_plus,
+        h5py.File(lib.const.SIM_MATCH_CATALOGS[shear_step_plus]) as truth_plus,
+        h5py.File(lib.const.SIM_TOMOGRAPHY_CATALOGS[shear_step_plus]) as tomo_plus,
+        h5py.File(lib.const.SIM_WEIGHT_CATALOGS[shear_step_plus]) as weight_plus,
+    ):
+
+        c_plus = tomo_plus["sompz"]["noshear"]["cell_wide"][:]
+        z_plus = truth_plus["mdet"]["noshear"]["z"][:]
+        w_plus = get_weight(weight_plus["mdet"]["noshear"], weight_keys=weight_keys)
+        response_plus = lib.response.get_shear_response(shear_plus["mdet"]["noshear"])
+
+        nz_plus = _compute_nz(
+            c_plus,
+            z_plus,
+            w_plus,
+            response_plus,
+            zedges=zedges,
+            zbinsc=zbinsc,
+        )
+
+    with (
+        h5py.File(lib.const.SIM_SHEAR_CATALOGS[shear_step_minus]) as shear_minus,
+        h5py.File(lib.const.SIM_MATCH_CATALOGS[shear_step_minus]) as truth_minus,
+        h5py.File(lib.const.SIM_TOMOGRAPHY_CATALOGS[shear_step_minus]) as tomo_minus,
+        h5py.File(lib.const.SIM_WEIGHT_CATALOGS[shear_step_minus]) as weight_minus,
+    ):
+
+        c_minus = tomo_minus["sompz"]["noshear"]["cell_wide"][:]
+        z_minus = truth_minus["mdet"]["noshear"]["z"][:]
+        w_minus = get_weight(weight_minus["mdet"]["noshear"], weight_keys=weight_keys)
+        response_minus = lib.response.get_shear_response(shear_minus["mdet"]["noshear"])
+
+        nz_minus = _compute_nz(
+            c_minus,
+            z_minus,
+            w_minus,
+            response_minus,
+            zedges=zedges,
+            zbinsc=zbinsc,
+        )
+
+    nz = {}
+    for tomographic_bin in lib.const.TOMOGRAPHIC_BINS:
+        nz[tomographic_bin] = (nz_plus[tomographic_bin] + nz_minus[tomographic_bin]) / 2.
+
+    return nz, zedges, zbinsc
+
+
+def get_weight(weight_dataset, weight_keys=["statistical_weight"]):
+    return functools.reduce(
+        operator.mul,
+        [
+            weight_dataset[weight_key][:]
+            for weight_key in weight_keys
+        ],
+    )
+
 
 def concatenate_catalogs(data):
     _dp, _dm = np.stack(data, axis=1)
@@ -45,21 +134,26 @@ def concatenate_catalogs(data):
     return dp, dm
 
 
-def process_file(*, dset, bhat, tile, tomographic_bin=None):
-    mdet = dset["mdet"]
-
+def process_file(shear, tomo, weight, tile, weight_keys, tomographic_bin=None):
     res = {}
     for mdet_step in lib.const.MDET_STEPS:
-        mdet_cat = mdet[mdet_step]
+        mdet_cat = shear["mdet"][mdet_step]
+
+        # _w = lib.weight.get_shear_weights(mdet_cat, sel=sel)
+        # _w = weight_function(mdet_cat, sel=sel)
+        weight_dataset = weight["mdet"][mdet_step]
+        w = get_weight(weight_dataset, weight_keys)
+
         in_tile = mdet_cat["tilename"][:] == tile
-        in_tomo = bhat[mdet_step] == tomographic_bin
+
+        # in_tomo = bhat[mdet_step] == tomographic_bin
+        in_tomo = (tomo["sompz"][mdet_step]["bhat"][:] == tomographic_bin)
         sel = in_tile & in_tomo
 
-        _w = lib.weight.get_shear_weights(mdet_cat, sel=sel)
-        n = np.sum(_w)
+        n = np.sum(w[sel])
         if n > 0:
-            g1 = np.average(mdet_cat["gauss_g_1"][sel], weights=_w)
-            g2 = np.average(mdet_cat["gauss_g_2"][sel], weights=_w)
+            g1 = np.average(mdet_cat["gauss_g_1"][sel], weights=w[sel])
+            g2 = np.average(mdet_cat["gauss_g_2"][sel], weights=w[sel])
         else:
             g1 = np.nan
             g2 = np.nan
@@ -75,9 +169,9 @@ def process_file(*, dset, bhat, tile, tomographic_bin=None):
     return res
 
 
-def process_file_pair(dset_plus, dset_minus, bhat_plus, bhat_minus, *, tile, tomographic_bin=None):
-    dp = process_file(dset=dset_plus, bhat=bhat_plus, tile=tile, tomographic_bin=tomographic_bin)
-    dm = process_file(dset=dset_minus, bhat=bhat_minus, tile=tile, tomographic_bin=tomographic_bin)
+def process_file_pair(shear_plus, shear_minus, tomo_plus, tomo_minus, weight_plus, weight_minus, weight_keys, *, tile, tomographic_bin=None):
+    dp = process_file(shear_plus, tomo_plus, weight_plus, tile, weight_keys, tomographic_bin=tomographic_bin)
+    dm = process_file(shear_minus, tomo_minus, weight_minus, tile, weight_keys, tomographic_bin=tomographic_bin)
 
     return dp, dm
 
@@ -109,65 +203,34 @@ def compute_shear_pair(dp, dm):
     )
 
 
-def process_pair(catalog_p, catalog_m, redshift_catalog_p, redshift_catalog_m, seed=None, resample="jackknife"):
+def process_pair(shear_step_plus, shear_step_minus, weight_keys, seed=None, resample="jackknife"):
+    shear_plus = h5py.File(lib.const.SIM_SHEAR_CATALOGS[shear_step_plus])
+    tomo_plus = h5py.File(lib.const.SIM_TOMOGRAPHY_CATALOGS[shear_step_plus])
+    weight_plus = h5py.File(lib.const.SIM_WEIGHT_CATALOGS[shear_step_plus])
 
-    parts_p = Path(catalog_p).parts
-    parts_m = Path(catalog_m).parts
+    shear_minus = h5py.File(lib.const.SIM_SHEAR_CATALOGS[shear_step_minus])
+    tomo_minus = h5py.File(lib.const.SIM_TOMOGRAPHY_CATALOGS[shear_step_minus])
+    weight_minus = h5py.File(lib.const.SIM_WEIGHT_CATALOGS[shear_step_minus])
 
-    config_p = parts_p[-3]
-    config_m = parts_m[-3]
+    # bhat_plus = {
+    #     mdet_step: lib.tomography.get_tomography(
+    #         hf_plus,
+    #         hf_redshift_plus,
+    #         mdet_step,
+    #     )
+    #     for mdet_step in lib.const.MDET_STEPS
+    # }
+    # bhat_minus = {
+    #     mdet_step: lib.tomography.get_tomography(
+    #         hf_minus,
+    #         hf_redshift_minus,
+    #         mdet_step,
+    #     )
+    #     for mdet_step in lib.const.MDET_STEPS
+    # }
 
-    assert config_p == config_m
-
-    shear_p = parts_p[-2].split("__")
-    shear_m = parts_m[-2].split("__")
-
-    # plus sim is shear slice
-    # minus sim is constant shear
-    zlow = float(shear_p[4].split("=")[1])
-    zhigh = float(shear_p[5].split("=")[1])
-
-    hf_plus = h5py.File(
-        catalog_p,
-        mode="r",
-        locking=False,
-    )
-    hf_redshift_plus = h5py.File(
-        redshift_catalog_p,
-        mode="r",
-        locking=False,
-    )
-
-    hf_minus = h5py.File(
-        catalog_m,
-        mode="r",
-        locking=False,
-    )
-    hf_redshift_minus = h5py.File(
-        redshift_catalog_m,
-        mode="r",
-        locking=False,
-    )
-
-    bhat_plus = {
-        mdet_step: lib.tomography.get_tomography(
-            hf_plus,
-            hf_redshift_plus,
-            mdet_step,
-        )
-        for mdet_step in lib.const.MDET_STEPS
-    }
-    bhat_minus = {
-        mdet_step: lib.tomography.get_tomography(
-            hf_minus,
-            hf_redshift_minus,
-            mdet_step,
-        )
-        for mdet_step in lib.const.MDET_STEPS
-    }
-
-    tilenames_p = np.unique(hf_plus["mdet"]["noshear"]["tilename"][:])
-    tilenames_m = np.unique(hf_minus["mdet"]["noshear"]["tilename"][:])
+    tilenames_p = np.unique(shear_plus["mdet"]["noshear"]["tilename"][:])
+    tilenames_m = np.unique(shear_minus["mdet"]["noshear"]["tilename"][:])
     tilenames = np.intersect1d(tilenames_p, tilenames_m)
     # tilenames = tilenames[:10]  # FIXME
     ntiles = len(tilenames)
@@ -175,7 +238,7 @@ def process_pair(catalog_p, catalog_m, redshift_catalog_p, redshift_catalog_m, s
     results = {}
     for tomographic_bin in lib.const.TOMOGRAPHIC_BINS:
         data = [
-            process_file_pair(hf_plus, hf_minus, bhat_plus, bhat_minus, tile=tile, tomographic_bin=tomographic_bin)
+            process_file_pair(shear_plus, shear_minus, tomo_plus, tomo_minus, weight_plus, weight_minus, weight_keys, tile=tile, tomographic_bin=tomographic_bin)
             for tile in tqdm.tqdm(
                 tilenames,
                 total=ntiles,
@@ -217,122 +280,81 @@ def process_pair(catalog_p, catalog_m, redshift_catalog_p, redshift_catalog_m, s
 
 
 def main():
-    shear_catalogs = lib.const.SIM_SHEAR_CATALOGS
-
-    redshift_catalogs = lib.const.SIM_REDSHIFT_CATALOGS
 
     kwargs = {"seed": None, "resample": "jackknife"}
     # kwargs = {"seed": 42, "resample": "bootstrap"}
 
-    shear_constant_catalog_pair = (
-        shear_catalogs["g1_slice=0.02__g2_slice=0.00__g1_other=0.00__g2_other=0.00__zlow=0.0__zhigh=6.0"],
-        shear_catalogs["g1_slice=-0.02__g2_slice=0.00__g1_other=0.00__g2_other=0.00__zlow=0.0__zhigh=6.0"]
-    )
-    redshift_constant_catalog_pair = (
-        redshift_catalogs["g1_slice=0.02__g2_slice=0.00__g1_other=0.00__g2_other=0.00__zlow=0.0__zhigh=6.0"],
-        redshift_catalogs["g1_slice=-0.02__g2_slice=0.00__g1_other=0.00__g2_other=0.00__zlow=0.0__zhigh=6.0"]
+    shear_constant_step_pair = (
+        "g1_slice=0.02__g2_slice=0.00__g1_other=0.00__g2_other=0.00__zlow=0.0__zhigh=6.0",
+        "g1_slice=-0.02__g2_slice=0.00__g1_other=0.00__g2_other=0.00__zlow=0.0__zhigh=6.0"
     )
 
-    shear_catalog_pairs = [
+    shear_step_pairs = [
         (
-            shear_catalogs["g1_slice=0.02__g2_slice=0.00__g1_other=-0.02__g2_other=0.00__zlow=0.0__zhigh=0.3"],
-            shear_catalogs["g1_slice=-0.02__g2_slice=0.00__g1_other=0.00__g2_other=0.00__zlow=0.0__zhigh=6.0"]
+            "g1_slice=0.02__g2_slice=0.00__g1_other=-0.02__g2_other=0.00__zlow=0.0__zhigh=0.3",
+            "g1_slice=-0.02__g2_slice=0.00__g1_other=0.00__g2_other=0.00__zlow=0.0__zhigh=6.0"
         ),
         (
-            shear_catalogs["g1_slice=0.02__g2_slice=0.00__g1_other=-0.02__g2_other=0.00__zlow=0.3__zhigh=0.6"],
-            shear_catalogs["g1_slice=-0.02__g2_slice=0.00__g1_other=0.00__g2_other=0.00__zlow=0.0__zhigh=6.0"]
+            "g1_slice=0.02__g2_slice=0.00__g1_other=-0.02__g2_other=0.00__zlow=0.3__zhigh=0.6",
+            "g1_slice=-0.02__g2_slice=0.00__g1_other=0.00__g2_other=0.00__zlow=0.0__zhigh=6.0"
         ),
         (
-            shear_catalogs["g1_slice=0.02__g2_slice=0.00__g1_other=-0.02__g2_other=0.00__zlow=0.6__zhigh=0.9"],
-            shear_catalogs["g1_slice=-0.02__g2_slice=0.00__g1_other=0.00__g2_other=0.00__zlow=0.0__zhigh=6.0"]
+            "g1_slice=0.02__g2_slice=0.00__g1_other=-0.02__g2_other=0.00__zlow=0.6__zhigh=0.9",
+            "g1_slice=-0.02__g2_slice=0.00__g1_other=0.00__g2_other=0.00__zlow=0.0__zhigh=6.0"
         ),
         (
-            shear_catalogs["g1_slice=0.02__g2_slice=0.00__g1_other=-0.02__g2_other=0.00__zlow=0.9__zhigh=1.2"],
-            shear_catalogs["g1_slice=-0.02__g2_slice=0.00__g1_other=0.00__g2_other=0.00__zlow=0.0__zhigh=6.0"]
+            "g1_slice=0.02__g2_slice=0.00__g1_other=-0.02__g2_other=0.00__zlow=0.9__zhigh=1.2",
+            "g1_slice=-0.02__g2_slice=0.00__g1_other=0.00__g2_other=0.00__zlow=0.0__zhigh=6.0"
         ),
         (
-            shear_catalogs["g1_slice=0.02__g2_slice=0.00__g1_other=-0.02__g2_other=0.00__zlow=1.2__zhigh=1.5"],
-            shear_catalogs["g1_slice=-0.02__g2_slice=0.00__g1_other=0.00__g2_other=0.00__zlow=0.0__zhigh=6.0"]
+            "g1_slice=0.02__g2_slice=0.00__g1_other=-0.02__g2_other=0.00__zlow=1.2__zhigh=1.5",
+            "g1_slice=-0.02__g2_slice=0.00__g1_other=0.00__g2_other=0.00__zlow=0.0__zhigh=6.0"
         ),
         (
-            shear_catalogs["g1_slice=0.02__g2_slice=0.00__g1_other=-0.02__g2_other=0.00__zlow=1.5__zhigh=1.8"],
-            shear_catalogs["g1_slice=-0.02__g2_slice=0.00__g1_other=0.00__g2_other=0.00__zlow=0.0__zhigh=6.0"]
+            "g1_slice=0.02__g2_slice=0.00__g1_other=-0.02__g2_other=0.00__zlow=1.5__zhigh=1.8",
+            "g1_slice=-0.02__g2_slice=0.00__g1_other=0.00__g2_other=0.00__zlow=0.0__zhigh=6.0"
         ),
         (
-            shear_catalogs["g1_slice=0.02__g2_slice=0.00__g1_other=-0.02__g2_other=0.00__zlow=1.8__zhigh=2.1"],
-            shear_catalogs["g1_slice=-0.02__g2_slice=0.00__g1_other=0.00__g2_other=0.00__zlow=0.0__zhigh=6.0"]
+            "g1_slice=0.02__g2_slice=0.00__g1_other=-0.02__g2_other=0.00__zlow=1.8__zhigh=2.1",
+            "g1_slice=-0.02__g2_slice=0.00__g1_other=0.00__g2_other=0.00__zlow=0.0__zhigh=6.0"
         ),
         (
-            shear_catalogs["g1_slice=0.02__g2_slice=0.00__g1_other=-0.02__g2_other=0.00__zlow=2.1__zhigh=2.4"],
-            shear_catalogs["g1_slice=-0.02__g2_slice=0.00__g1_other=0.00__g2_other=0.00__zlow=0.0__zhigh=6.0"]
+            "g1_slice=0.02__g2_slice=0.00__g1_other=-0.02__g2_other=0.00__zlow=2.1__zhigh=2.4",
+            "g1_slice=-0.02__g2_slice=0.00__g1_other=0.00__g2_other=0.00__zlow=0.0__zhigh=6.0"
         ),
         (
-            shear_catalogs["g1_slice=0.02__g2_slice=0.00__g1_other=-0.02__g2_other=0.00__zlow=2.4__zhigh=2.7"],
-            shear_catalogs["g1_slice=-0.02__g2_slice=0.00__g1_other=0.00__g2_other=0.00__zlow=0.0__zhigh=6.0"]
+            "g1_slice=0.02__g2_slice=0.00__g1_other=-0.02__g2_other=0.00__zlow=2.4__zhigh=2.7",
+            "g1_slice=-0.02__g2_slice=0.00__g1_other=0.00__g2_other=0.00__zlow=0.0__zhigh=6.0"
         ),
         (
-            shear_catalogs["g1_slice=0.02__g2_slice=0.00__g1_other=-0.02__g2_other=0.00__zlow=2.7__zhigh=6.0"],
-            shear_catalogs["g1_slice=-0.02__g2_slice=0.00__g1_other=0.00__g2_other=0.00__zlow=0.0__zhigh=6.0"]
-        ),
-    ]
-    redshift_catalog_pairs = [
-        (
-            redshift_catalogs["g1_slice=0.02__g2_slice=0.00__g1_other=-0.02__g2_other=0.00__zlow=0.0__zhigh=0.3"],
-            redshift_catalogs["g1_slice=-0.02__g2_slice=0.00__g1_other=0.00__g2_other=0.00__zlow=0.0__zhigh=6.0"]
-        ),
-        (
-            redshift_catalogs["g1_slice=0.02__g2_slice=0.00__g1_other=-0.02__g2_other=0.00__zlow=0.3__zhigh=0.6"],
-            redshift_catalogs["g1_slice=-0.02__g2_slice=0.00__g1_other=0.00__g2_other=0.00__zlow=0.0__zhigh=6.0"]
-        ),
-        (
-            redshift_catalogs["g1_slice=0.02__g2_slice=0.00__g1_other=-0.02__g2_other=0.00__zlow=0.6__zhigh=0.9"],
-            redshift_catalogs["g1_slice=-0.02__g2_slice=0.00__g1_other=0.00__g2_other=0.00__zlow=0.0__zhigh=6.0"]
-        ),
-        (
-            redshift_catalogs["g1_slice=0.02__g2_slice=0.00__g1_other=-0.02__g2_other=0.00__zlow=0.9__zhigh=1.2"],
-            redshift_catalogs["g1_slice=-0.02__g2_slice=0.00__g1_other=0.00__g2_other=0.00__zlow=0.0__zhigh=6.0"]
-        ),
-        (
-            redshift_catalogs["g1_slice=0.02__g2_slice=0.00__g1_other=-0.02__g2_other=0.00__zlow=1.2__zhigh=1.5"],
-            redshift_catalogs["g1_slice=-0.02__g2_slice=0.00__g1_other=0.00__g2_other=0.00__zlow=0.0__zhigh=6.0"]
-        ),
-        (
-            redshift_catalogs["g1_slice=0.02__g2_slice=0.00__g1_other=-0.02__g2_other=0.00__zlow=1.5__zhigh=1.8"],
-            redshift_catalogs["g1_slice=-0.02__g2_slice=0.00__g1_other=0.00__g2_other=0.00__zlow=0.0__zhigh=6.0"]
-        ),
-        (
-            redshift_catalogs["g1_slice=0.02__g2_slice=0.00__g1_other=-0.02__g2_other=0.00__zlow=1.8__zhigh=2.1"],
-            redshift_catalogs["g1_slice=-0.02__g2_slice=0.00__g1_other=0.00__g2_other=0.00__zlow=0.0__zhigh=6.0"]
-        ),
-        (
-            redshift_catalogs["g1_slice=0.02__g2_slice=0.00__g1_other=-0.02__g2_other=0.00__zlow=2.1__zhigh=2.4"],
-            redshift_catalogs["g1_slice=-0.02__g2_slice=0.00__g1_other=0.00__g2_other=0.00__zlow=0.0__zhigh=6.0"]
-        ),
-        (
-            redshift_catalogs["g1_slice=0.02__g2_slice=0.00__g1_other=-0.02__g2_other=0.00__zlow=2.4__zhigh=2.7"],
-            redshift_catalogs["g1_slice=-0.02__g2_slice=0.00__g1_other=0.00__g2_other=0.00__zlow=0.0__zhigh=6.0"]
-        ),
-        (
-            redshift_catalogs["g1_slice=0.02__g2_slice=0.00__g1_other=-0.02__g2_other=0.00__zlow=2.7__zhigh=6.0"],
-            redshift_catalogs["g1_slice=-0.02__g2_slice=0.00__g1_other=0.00__g2_other=0.00__zlow=0.0__zhigh=6.0"]
+            "g1_slice=0.02__g2_slice=0.00__g1_other=-0.02__g2_other=0.00__zlow=2.7__zhigh=6.0",
+            "g1_slice=-0.02__g2_slice=0.00__g1_other=0.00__g2_other=0.00__zlow=0.0__zhigh=6.0"
         ),
     ]
 
-    # /// FIXME
-    # process_pair(*shear_constant_pair, *redshift_constant_pair, **kwargs)
-    # ///
+    weight_keys = ["statistical_weight"]
 
     results = {}
     futures = {}
-    with concurrent.futures.ProcessPoolExecutor(max_workers=min(32, len(shear_catalog_pairs) + 1)) as executor:
+    with concurrent.futures.ProcessPoolExecutor(max_workers=min(32, len(shear_step_pairs) + 1)) as executor:
         # constant shear
-        _future = executor.submit(process_pair, *shear_constant_catalog_pair, *redshift_constant_catalog_pair, **kwargs)
+        _future = executor.submit(
+            process_pair,
+            *shear_constant_step_pair,
+            weight_keys,
+            **kwargs,
+        )
         # we let alpha=-1 represent the constant shear simulation
         futures[-1] = _future
 
         # redshift-dependent shear
-        for alpha, (shear_catalog_pair, redshift_catalog_pair) in enumerate(zip(shear_catalog_pairs, redshift_catalog_pairs)):
-            _future = executor.submit(process_pair, *shear_catalog_pair, *redshift_catalog_pair, **kwargs)
+        for alpha, shear_step_pair in enumerate(shear_step_pairs):
+            _future = executor.submit(
+                process_pair,
+                *shear_step_pair,
+                weight_keys,
+                **kwargs,
+            )
             futures[alpha] = _future
 
         for alpha, future in futures.items():
@@ -389,9 +411,6 @@ def main():
                 )
                 cov[i, j] = cov_value
 
-    # cov /= dg_true**2
-    # mean /= dg_true
-
     with h5py.File("N_gamma_alpha.hdf5", "w") as hf:
         shear_group = hf.create_group("shear")
         shear_group.create_dataset("mean_params", data=mean_params)
@@ -406,27 +425,32 @@ def main():
 
     # ---
 
-    zbinsc = lib.const.ZVALS
+    # zbinsc = lib.const.ZVALS
 
-    with h5py.File(redshift_constant_catalog_pair[0], "r") as hf_redshift_plus, h5py.File(redshift_constant_catalog_pair[1], "r") as hf_redshift_minus:
-        # _zbinsc_plus = hf_redshift_plus["sompz"]["pzdata_weighted_sompz_dz005"]["zbinsc"][:]
-        # _zbinsc_minus = hf_redshift_minus["sompz"]["pzdata_weighted_sompz_dz005"]["zbinsc"][:]
+    # with (
+    #     h5py.File(lib.const.SIM_REDSHIFT_CATALOGS[shear_constant_step_pair[0]]) as hf_redshift_plus,
+    #     h5py.File(lib.const.SIM_REDSHIFT_CATALOGS[shear_constant_step_pair[1]]) as hf_redshift_minus,
+    # ):
+    #     # _zbinsc_plus = hf_redshift_plus["sompz"]["pzdata_weighted_sompz_dz005"]["zbinsc"][:]
+    #     # _zbinsc_minus = hf_redshift_minus["sompz"]["pzdata_weighted_sompz_dz005"]["zbinsc"][:]
 
-        # np.testing.assert_array_equal(_zbinsc_plus, _zbinsc_minus)
-        # zbinsc = _zbinsc_plus
+    #     # np.testing.assert_array_equal(_zbinsc_plus, _zbinsc_minus)
+    #     # zbinsc = _zbinsc_plus
 
-        nz_sompz = {}
-        nz_true = {}
-        for tomographic_bin in lib.const.TOMOGRAPHIC_BINS:
-            _nz_sompz_plus = hf_redshift_plus["sompz"]["pzdata_weighted_sompz_dz005"][f"bin{tomographic_bin}"][:]
-            _nz_sompz_minus = hf_redshift_minus["sompz"]["pzdata_weighted_sompz_dz005"][f"bin{tomographic_bin}"][:]
-            _nz_sompz = (_nz_sompz_plus + _nz_sompz_minus) / 2
-            nz_sompz[f"bin{tomographic_bin}"] = _nz_sompz
+    #     nz_sompz = {}
+    #     nz_true = {}
+    #     for tomographic_bin in lib.const.TOMOGRAPHIC_BINS:
+    #         _nz_sompz_plus = hf_redshift_plus["sompz"]["pzdata_weighted_sompz_dz005"][f"bin{tomographic_bin}"][:]
+    #         _nz_sompz_minus = hf_redshift_minus["sompz"]["pzdata_weighted_sompz_dz005"][f"bin{tomographic_bin}"][:]
+    #         _nz_sompz = (_nz_sompz_plus + _nz_sompz_minus) / 2
+    #         nz_sompz[f"bin{tomographic_bin}"] = _nz_sompz
 
-            _nz_true_plus = hf_redshift_plus["sompz"]["pzdata_weighted_true_dz005"][f"bin{tomographic_bin}"][:]
-            _nz_true_minus = hf_redshift_minus["sompz"]["pzdata_weighted_true_dz005"][f"bin{tomographic_bin}"][:]
-            _nz_true = (_nz_true_plus + _nz_true_minus) / 2
-            nz_true[f"bin{tomographic_bin}"] = _nz_true
+    #         _nz_true_plus = hf_redshift_plus["sompz"]["pzdata_weighted_true_dz005"][f"bin{tomographic_bin}"][:]
+    #         _nz_true_minus = hf_redshift_minus["sompz"]["pzdata_weighted_true_dz005"][f"bin{tomographic_bin}"][:]
+    #         _nz_true = (_nz_true_plus + _nz_true_minus) / 2
+    #         nz_true[f"bin{tomographic_bin}"] = _nz_true
+
+    nz, zedges, zbinsc = compute_nz(shear_constant_step_pair[0], shear_constant_step_pair[1], weight_keys, zedges=ZEDGES, zbinsc=ZBINSC)
 
     # ---
 
@@ -435,18 +459,25 @@ def main():
         redshift_group = hf.create_group("redshift")
         # redshift_group.create_dataset("zbinsc", data=zbinsc)
 
-        sompz_redshift_group = redshift_group.create_group("sompz")
-        true_redshift_group = redshift_group.create_group("true")
+        # sompz_redshift_group = redshift_group.create_group("sompz")
+        # true_redshift_group = redshift_group.create_group("true")
 
-        sompz_redshift_group.create_dataset("zbinsc", data=zbinsc)
-        true_redshift_group.create_dataset("zbinsc", data=zbinsc)
+
+        # sompz_redshift_group.create_dataset("zbinsc", data=zbinsc)
+        # true_redshift_group.create_dataset("zbinsc", data=zbinsc)
+
+        redshift_group.create_dataset("zedges", data=zedges)
+        redshift_group.create_dataset("zbinsc", data=zbinsc)
+
 
         for tomographic_bin in lib.const.TOMOGRAPHIC_BINS:
             groupname = f"bin{tomographic_bin}"
             # redshift_group.create_dataset(groupname, data=nz_sompz[groupname])
 
-            sompz_redshift_group.create_dataset(groupname, data=nz_sompz[groupname])
-            true_redshift_group.create_dataset(groupname, data=nz_true[groupname])
+            # sompz_redshift_group.create_dataset(groupname, data=nz_sompz[groupname])
+            # true_redshift_group.create_dataset(groupname, data=nz_true[groupname])
+
+            redshift_group.create_dataset(groupname, data=nz[tomographic_bin])
 
 
 if __name__ == "__main__":

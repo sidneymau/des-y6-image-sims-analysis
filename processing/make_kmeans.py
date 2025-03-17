@@ -148,9 +148,9 @@ def main():
 
         f_y6 = w_y6 / n_y6
 
-        _w = f_y6 / f_sim
+        w = f_y6 / f_sim
 
-        w = _w / np.sum(_w)
+        # w = _w / np.sum(_w)
 
         neighbor_weights = {
             "labels": labels,

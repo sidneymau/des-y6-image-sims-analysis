@@ -79,6 +79,15 @@ SIM_REDSHIFT_CATALOGS = {
     for shear_step in SHEAR_STEPS
 }
 
+SIM_TOMOGRAPHY_DIR = "/global/cfs/cdirs/des/y6-image-sims/fiducial-tomography"
+SIM_TOMOGRAPHY_CATALOGS = {
+    shear_step: os.path.join(
+        SIM_TOMOGRAPHY_DIR,
+        f"tomography_{shear_step}.hdf5",
+    )
+    for shear_step in SHEAR_STEPS
+}
+
 SIM_WEIGHT_DIR = "/global/cfs/cdirs/des/y6-image-sims/fiducial-weights"
 SIM_WEIGHT_CATALOGS = {
     shear_step: os.path.join(
