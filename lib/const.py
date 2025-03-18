@@ -37,6 +37,7 @@ MDET_STEPS = [
 
 Y6_SHEAR_CATALOG = "/global/cfs/projectdirs/des/y6-shear-catalogs/Y6A2_METADETECT_V6_UNBLINDED/metadetect_cutsv6_all.h5"
 Y6_REDSHIFT_CATALOG = "/global/cfs/cdirs/des/y6-redshift/sompz_v6_10000Tile_final_unblind_24-11-05.h5"
+Y6_TOMOGRAPHY_CATALOG = "/global/cfs/cdirs/des/y6-image-sims/fiducial-tomography/tomography_y6.hdf5"
 
 DEEPFIELD_CATALOG = "/global/cfs/cdirs/desbalro/DES_DF_COSMOS.fits"
 DES_COSMOS_CATALOG = "/global/cfs/cdirs/desbalro/des_cosmos_data_v2.fits"
