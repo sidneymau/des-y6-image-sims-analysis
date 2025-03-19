@@ -12,7 +12,9 @@ from numpyro.infer import (
 )
 
 
-def measure_map(*, model_module, model_data, seed, num_steps=50_000, learning_rate=1e-3):
+def measure_map(
+    *, model_module, model_data, seed, num_steps=50_000, learning_rate=1e-3
+):
     """Find the MAP estimate of the model parameters using Adam.
 
     Parameters
@@ -47,7 +49,7 @@ def measure_map(*, model_module, model_data, seed, num_steps=50_000, learning_ra
 
     for key in list(map_params.keys()):
         if key.endswith("_auto_loc"):
-            new_key = key[:-len("_auto_loc")]
+            new_key = key[: -len("_auto_loc")]
             map_params[new_key] = map_params[key]
             del map_params[key]
 
