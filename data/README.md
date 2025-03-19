@@ -7,3 +7,4 @@
 - v2: 1000-tile sample and using sim transfer functions; with reocmputed n(z)s (sim response grid)
     - statistical: weights solely from statistical shear weight
     - statistical-neighbor: weights are product of statistical shear weight and neighbor weight
+    - statistical-occupancy: weights are product of statistical shear weight and occupancy ratio weight
