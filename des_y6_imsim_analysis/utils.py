@@ -50,16 +50,13 @@ ModelData = namedtuple(
 )
 
 
-def read_data(filename, redshift_type="true"):
+def read_data(filename):
     """Read the data from the given filename.
 
     Parameters
     ----------
     filename : str
         The name of the file to read.
-    redshift_type : str
-        The type of redshift to read. Either "true" or "sompz".
-        Default is "true".
 
     Returns
     -------
@@ -77,7 +74,7 @@ def read_data(filename, redshift_type="true"):
             zbins.append(d[f"alpha/bin{zbin}"][:].astype(np.float64))
         zbins = np.array(zbins)
 
-        z = d[f"redshift/{redshift_type}/zbinsc"][:].astype(np.float64)
+        z = d["redshift/zbinsc"][:].astype(np.float64)
         if np.allclose(z[0], 0.0):
             cutind = 1
         else:
@@ -86,7 +83,7 @@ def read_data(filename, redshift_type="true"):
 
         nzs = {}
         for _bin in range(4):
-            nzs[_bin] = d[f"redshift/{redshift_type}/bin{_bin}"][:].astype(np.float64)
+            nzs[_bin] = d[f"redshift/bin{_bin}"][:].astype(np.float64)
             nzs[_bin] = nzs[_bin][cutind:] / np.sum(nzs[_bin][cutind:])
 
     return ModelData(z=z, nzs=nzs, mn_pars=mn_pars, zbins=zbins, mn=mn, cov=cov)
@@ -505,7 +502,7 @@ def plot_results(*, model_module, model_data, samples=None, map_params=None):
     return fig
 
 
-def measure_m_dz(*, model_module, model_data, samples=None, return_dict=False):
+def measure_m_dz(*, model_module, model_data, samples, return_dict=False):
     nzs = model_data["nz"]
     n_samples = 1000
     data = np.zeros((8, n_samples))

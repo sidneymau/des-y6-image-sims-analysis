@@ -6,11 +6,12 @@ import jax.numpy as jnp  # noqa: E402
 import numpy as np  # noqa: E402
 import numpyro  # noqa: E402
 import numpyro.distributions as dist  # noqa: E402
-from des_y6_nz_modeling import (  # noqa: E402
+from jax.nn import sigmoid  # noqa: E402
+
+from des_y6_imsim_analysis.utils import (  # noqa: E402
     GMODEL_COSMOS_NZ,
     sompz_integral,
 )
-from jax.nn import sigmoid  # noqa: E402
 
 
 def _bump(z, a, b, w):
