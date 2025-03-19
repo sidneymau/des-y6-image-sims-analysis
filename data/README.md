@@ -8,3 +8,4 @@
     - statistical: weights solely from statistical shear weight
     - statistical-neighbor: weights are product of statistical shear weight and neighbor weight
     - statistical-occupancy: weights are product of statistical shear weight and occupancy ratio weight
+    - statistical-neighbor-occupancy: weights are product of statistical shear weight, neighbor weight, and occupancy ratio weight
