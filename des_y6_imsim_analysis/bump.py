@@ -14,11 +14,13 @@ from des_y6_imsim_analysis.utils import (  # noqa: E402
 )
 
 
+@jax.jit
 def _bump(z, a, b, w):
     # always use jax.nn.sigmoid here to ensure stable autodiff
     return sigmoid((z - a) / w) * (1 - sigmoid((z - b) / w))
 
 
+@jax.jit
 def model_parts_smooth(
     *,
     params,
@@ -29,14 +31,10 @@ def model_parts_smooth(
     zbins=None,
     mn=None,
     cov=None,
-    fixed_param_values=None,
 ):
     gtemp = GMODEL_COSMOS_NZ[: z.shape[0]]
     gtemp = gtemp / gtemp.sum()
 
-    fixed_param_values = fixed_param_values or {}
-    for k, v in fixed_param_values.items():
-        params[k] = numpyro.deterministic(k, v)
     model_parts = {}
     for i in range(4):
         model_parts[i] = {}
@@ -53,8 +51,9 @@ def model_parts_smooth(
     return model_parts
 
 
+@jax.jit
 def model_mean_smooth(
-    *, pts, z, nz, mn_pars, zbins, params, mn=None, cov=None, fixed_param_values=None
+    *, pts, z, nz, mn_pars, zbins, params, mn=None, cov=None,
 ):
     model_parts = model_parts_smooth(
         pts=pts,
@@ -63,7 +62,6 @@ def model_mean_smooth(
         mn_pars=mn_pars,
         zbins=zbins,
         params=params,
-        fixed_param_values=fixed_param_values,
     )
     ngammas = []
     for i in range(4):
@@ -73,8 +71,9 @@ def model_mean_smooth(
     return jnp.stack(ngammas)
 
 
+@jax.jit
 def model_mean(
-    *, pts, z, nz, mn_pars, zbins, params, mn=None, cov=None, fixed_param_values=None
+    *, pts, z, nz, mn_pars, zbins, params, mn=None, cov=None, fixed_param_values=None,
 ):
     ngammas = model_mean_smooth(
         pts=pts,
@@ -83,7 +82,6 @@ def model_mean(
         mn_pars=mn_pars,
         zbins=zbins,
         params=params,
-        fixed_param_values=fixed_param_values,
     )
 
     def _scan_func(mn_pars, ind):
@@ -92,11 +90,12 @@ def model_mean(
         val = sompz_integral(ngammas[bi], zlow, zhigh)
         return mn_pars, val
 
-    inds = jnp.arange(len(mn_pars))
+    inds = jnp.arange(mn_pars.shape[0])
     _, model = jax.lax.scan(_scan_func, mn_pars, inds)
     return model
 
 
+@jax.jit
 def model_mean_smooth_tomobin(
     *,
     pts,
@@ -117,9 +116,8 @@ def model_mean_smooth_tomobin(
         mn_pars=mn_pars,
         zbins=zbins,
         params=params,
-        fixed_param_values=fixed_param_values,
     )
-    return np.asarray(model_mn)[tbind]
+    return jnp.asarray(model_mn)[tbind]
 
 
 def model(
@@ -151,6 +149,9 @@ def model(
         for j in range(pts.shape[1]):
             params[f"a{j}_b{i}"] = numpyro.sample(f"a{j}_b{i}", dist.Uniform(-10, 10))
 
+    for k, v in fixed_param_values.items():
+        params[k] = numpyro.deterministic(k, v)
+
     model_mn = model_mean(
         pts=pts,
         z=z,
@@ -158,7 +159,6 @@ def model(
         mn_pars=mn_pars,
         zbins=zbins,
         params=params,
-        fixed_param_values=fixed_param_values,
     )
     numpyro.sample(
         "model", dist.MultivariateNormal(loc=model_mn, covariance_matrix=cov), obs=mn
@@ -174,7 +174,7 @@ def make_model_data(
     ----------
     z : array
         The redshift values.
-    nzs : dict mapping bin index to n(z).
+    nzs : array, dimension (4, n_z)
         The input n(z) data.
     mn : array
         The measured N_gamma_alpha values.
@@ -233,7 +233,7 @@ def make_model_data(
         nz=nzs,
         mn=mn,
         cov=cov,
-        mn_pars=jnp.asarray(mn_pars, dtype=np.int32),
-        zbins=jnp.asarray(zbins),
+        mn_pars=np.asarray(mn_pars, dtype=np.int32),
+        zbins=np.asarray(zbins),
         fixed_param_values=fixed_param_values,
     )

@@ -13,7 +13,7 @@ from numpyro.infer import (
 
 
 def measure_map(
-    *, model_module, model_data, seed, num_steps=50_000, learning_rate=1e-3
+    *, model_module, model_data, seed, num_steps=50_000, learning_rate=1e-3, progress_bar=False
 ):
     """Find the MAP estimate of the model parameters using Adam.
 
@@ -29,6 +29,8 @@ def measure_map(
         The number of optimization steps. Default is 50,000.
     learning_rate : float, optional
         The learning rate for the Adam optimizer. Default is 1e-3.
+    progress_bar : bool, optional
+        Whether to show a progress bar during optimization. Default is False.
 
     Returns
     -------
@@ -42,7 +44,7 @@ def measure_map(
     svi_results = svi.run(
         random.PRNGKey(seed),
         num_steps,
-        progress_bar=False,
+        progress_bar=progress_bar,
         **model_data,
     )
     map_params = svi_results.params
@@ -130,6 +132,9 @@ def run_mcmc(*, model_module, model_data, init_params, seed, **mcmc_kwargs):
     mcmc_kwargs["num_samples"] = mcmc_kwargs.get("num_samples", 1000)
     mcmc_kwargs["num_chains"] = mcmc_kwargs.get("num_chains", 4)
 
+    if "progress_bar" not in mcmc_kwargs:
+        mcmc_kwargs["progress_bar"] = False
+
     rng_key = random.PRNGKey(seed)
     rng_key, rng_key_ = random.split(rng_key)
 
@@ -140,11 +145,15 @@ def run_mcmc(*, model_module, model_data, init_params, seed, **mcmc_kwargs):
     )
     mcmc = MCMC(
         kernel,
-        progress_bar=False,
         **mcmc_kwargs,
     )
     mcmc.run(
         rng_key_,
         **model_data,
     )
+
+    # jax is async so we have to wait until the chains are done
+    test_key = list(init_params.keys())[0]
+    mcmc.get_samples()[test_key].block_until_ready()
+
     return mcmc

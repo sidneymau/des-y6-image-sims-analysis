@@ -81,10 +81,11 @@ def read_data(filename):
             cutind = 0
         z = z[cutind:]
 
-        nzs = {}
+        nzs = []
         for _bin in range(4):
-            nzs[_bin] = d[f"redshift/bin{_bin}"][:].astype(np.float64)
-            nzs[_bin] = nzs[_bin][cutind:] / np.sum(nzs[_bin][cutind:])
+            nzs.append(d[f"redshift/bin{_bin}"][:].astype(np.float64))
+            nzs[-1] = nzs[-1][cutind:] / np.sum(nzs[-1][cutind:])
+        nzs = np.array(nzs, dtype=np.float64)
 
     return ModelData(z=z, nzs=nzs, mn_pars=mn_pars, zbins=zbins, mn=mn, cov=cov)
 
