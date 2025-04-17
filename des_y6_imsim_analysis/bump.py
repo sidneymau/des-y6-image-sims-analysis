@@ -165,6 +165,57 @@ def model(
     )
 
 
+def make_bump_pts(*, num_bins, zbins):
+    """Make the array of bump start end end points.
+
+    Parameters
+    ----------
+    num_bins : int
+        The number of bins to use. If not positive, then the bins are set to the sheared
+        ranges from the image sims. Otherwise, they are set to uniformly cover the range
+        of 0 to 2.7 for num_bins-1 and then a single bin from 2.7 to 6.01.
+    zbins : array
+        The shear bin edges.
+
+    Returns
+    -------
+    pts : array, dimension (4, num_bins, 2)
+        The array of bump start and end points. The first index is the tomographic bin,
+        the second index is the bin number, and the third index is the start and end
+        points of the bump.
+    """
+    if num_bins <= 0:
+        pts = []
+        for i in range(4):
+            pts.append(zbins[1:, :].copy())
+    else:
+        pts = []
+        for i in range(4):
+            zmid = np.linspace(0.0, 2.7, num_bins)[1:-1]
+            be = np.concatenate(
+                [
+                    [0.0],
+                    zmid,
+                    [2.7],
+                    [6.01],
+                ]
+            )
+            assert be.shape[0] == num_bins + 1
+            _pts = []
+            for i in range(num_bins):
+                _pts.append(be[i : i + 2])
+            pts.append(_pts)
+
+    pts = np.array(pts, dtype=np.float64)
+
+    assert pts.shape[0] == 4
+    if num_bins > 0:
+        assert pts.shape[1] == num_bins
+    assert pts.shape[2] == 2
+
+    return pts
+
+
 def make_model_data(
     *, z, nzs, mn, cov, mn_pars, zbins, fixed_param_values=None, num_bins=-1
 ):
@@ -197,38 +248,8 @@ def make_model_data(
     data : dict
         The model data. Pass to the functions using `**data`.
     """
-    if num_bins <= 0:
-        pts = []
-        for i in range(4):
-            pts.append(zbins[1:, :].copy())
-        pts = np.array(pts)
-    else:
-        pts = []
-        for i in range(4):
-            zmid = np.linspace(0.0, 2.7, num_bins)[1:-1]
-            be = np.concatenate(
-                [
-                    [0.0],
-                    zmid,
-                    [2.7],
-                    [6.01],
-                ]
-            )
-            assert be.shape[0] == num_bins + 1
-            _pts = []
-            for i in range(num_bins):
-                _pts.append(be[i : i + 2])
-            pts.append(_pts)
-
-        pts = np.array(pts)
-
-    assert pts.shape[0] == 4
-    if num_bins > 0:
-        assert pts.shape[1] == num_bins
-    assert pts.shape[2] == 2
-
     return dict(
-        pts=np.array(pts),
+        pts=make_bump_pts(num_bins=num_bins, zbins=zbins),
         z=z,
         nz=nzs,
         mn=mn,

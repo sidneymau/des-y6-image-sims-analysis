@@ -539,3 +539,92 @@ def measure_m_dz(*, model_module, model_data, samples, return_dict=False):
         data = data.T
 
     return data
+
+
+def compute_eff_nz_from_data(*, model_module, mcmc_samples, model_data, input_nz, rng):
+    """Compute the effective nz for a given set of input n(z) values and MCMC samples
+    for the model parameters.
+
+    Parameters
+    ----------
+    model_module : module
+        The module containing the model functions.
+    mcmc_samples : dict
+        The MCMC samples for the model parameters. Dict is keyed on parameter name
+        with an array of samples for each parameter.
+    model_data : dict
+        The model data containing the necessary information for the model. Produced from
+        `model_module.make_model_data`.
+    input_nz : array
+        The input n(z) values. Shape is (# of input nzs, # of tomo bins, nz dimension).
+    rng : np.random.RandomState
+        Random number generator for sampling.
+
+    Returns
+    -------
+    mvals : array
+        The values of m for each input n(z) and model parameter sample. Shape is
+        (# of input nzs, # of tomo bins).
+    dzvals : array
+        The values of dz for each input n(z) and model parameter sample. Shape is
+        (# of input nzs, # of tomo bins).
+    finalnzs : array
+        The final n(z) values for each input n(z) and model parameter sample. Shape is
+        (# of input nzs, # of tomo bins, nz dimension).
+    """
+    test_key = list(mcmc_samples.keys())[0]
+    n_tomo = input_nz.shape[1]
+    assert n_tomo == 4
+
+    assert input_nz.shape[1] == 4
+    assert input_nz.shape[2] == model_data["z"].shape[0]
+
+    key_mvals = []
+    key_dzvals = []
+    key_finalnzs = []
+    for i in range(input_nz.shape[0]):
+        rind = rng.choice(mcmc_samples[test_key].shape[0])
+
+        params = {
+            k: mcmc_samples[k][rind] for k in mcmc_samples.keys()
+        }
+        nz = input_nz[i, :, :].copy()
+        for _i in range(n_tomo):
+            nz[_i, :] = nz[_i, :] / np.sum(nz[_i, :])
+        model_nz = model_module.model_mean_smooth(
+            pts=model_data["pts"],
+            z=model_data["z"],
+            nz=nz,
+            mn_pars=model_data["mn_pars"],
+            zbins=model_data["zbins"],
+            params=params,
+            mn=None,
+            cov=None,
+        )
+
+        model_nz = np.array(model_nz)
+        assert model_nz.shape == (n_tomo, model_data["z"].shape[0])
+
+        key_mvals.append([
+            float(sompz_integral(model_nz[_i, :], 0, 6) - 1)
+            for _i in range(n_tomo)
+        ])
+
+        for _i in range(n_tomo):
+            model_nz[_i, :] = model_nz[_i, :] / np.sum(model_nz[_i, :])
+
+        key_finalnzs.append(model_nz)
+        key_dzvals.append([
+            float(compute_nz_binned_mean(model_nz[_i, :]) - compute_nz_binned_mean(nz[_i, :]))
+            for _i in range(n_tomo)
+        ])
+
+    mvals = np.array(key_mvals)
+    dzvals = np.array(key_dzvals)
+    finalnzs = np.array(key_finalnzs)
+
+    assert mvals.shape == (input_nz.shape[0], n_tomo)
+    assert dzvals.shape == (input_nz.shape[0], n_tomo)
+    assert finalnzs.shape == (input_nz.shape[0], n_tomo, input_nz.shape[-1])
+
+    return mvals, dzvals, finalnzs
