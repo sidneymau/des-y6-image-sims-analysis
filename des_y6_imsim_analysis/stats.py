@@ -13,7 +13,13 @@ from numpyro.infer import (
 
 
 def measure_map(
-    *, model_module, model_data, seed, num_steps=50_000, learning_rate=1e-3, progress_bar=False
+    *,
+    model_module,
+    model_data,
+    seed,
+    num_steps=50_000,
+    learning_rate=1e-3,
+    progress_bar=False,
 ):
     """Find the MAP estimate of the model parameters using Adam.
 

@@ -585,9 +585,7 @@ def compute_eff_nz_from_data(*, model_module, mcmc_samples, model_data, input_nz
     for i in range(input_nz.shape[0]):
         rind = rng.choice(mcmc_samples[test_key].shape[0])
 
-        params = {
-            k: mcmc_samples[k][rind] for k in mcmc_samples.keys()
-        }
+        params = {k: mcmc_samples[k][rind] for k in mcmc_samples.keys()}
         nz = input_nz[i, :, :].copy()
         for _i in range(n_tomo):
             nz[_i, :] = nz[_i, :] / np.sum(nz[_i, :])
@@ -605,19 +603,23 @@ def compute_eff_nz_from_data(*, model_module, mcmc_samples, model_data, input_nz
         model_nz = np.array(model_nz)
         assert model_nz.shape == (n_tomo, model_data["z"].shape[0])
 
-        key_mvals.append([
-            float(sompz_integral(model_nz[_i, :], 0, 6) - 1)
-            for _i in range(n_tomo)
-        ])
+        key_mvals.append(
+            [float(sompz_integral(model_nz[_i, :], 0, 6) - 1) for _i in range(n_tomo)]
+        )
 
         for _i in range(n_tomo):
             model_nz[_i, :] = model_nz[_i, :] / np.sum(model_nz[_i, :])
 
         key_finalnzs.append(model_nz)
-        key_dzvals.append([
-            float(compute_nz_binned_mean(model_nz[_i, :]) - compute_nz_binned_mean(nz[_i, :]))
-            for _i in range(n_tomo)
-        ])
+        key_dzvals.append(
+            [
+                float(
+                    compute_nz_binned_mean(model_nz[_i, :])
+                    - compute_nz_binned_mean(nz[_i, :])
+                )
+                for _i in range(n_tomo)
+            ]
+        )
 
     mvals = np.array(key_mvals)
     dzvals = np.array(key_dzvals)

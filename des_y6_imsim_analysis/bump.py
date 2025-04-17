@@ -53,7 +53,15 @@ def model_parts_smooth(
 
 @jax.jit
 def model_mean_smooth(
-    *, pts, z, nz, mn_pars, zbins, params, mn=None, cov=None,
+    *,
+    pts,
+    z,
+    nz,
+    mn_pars,
+    zbins,
+    params,
+    mn=None,
+    cov=None,
 ):
     model_parts = model_parts_smooth(
         pts=pts,
@@ -73,7 +81,16 @@ def model_mean_smooth(
 
 @jax.jit
 def model_mean(
-    *, pts, z, nz, mn_pars, zbins, params, mn=None, cov=None, fixed_param_values=None,
+    *,
+    pts,
+    z,
+    nz,
+    mn_pars,
+    zbins,
+    params,
+    mn=None,
+    cov=None,
+    fixed_param_values=None,
 ):
     ngammas = model_mean_smooth(
         pts=pts,

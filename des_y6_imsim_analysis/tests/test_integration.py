@@ -33,17 +33,13 @@ def _make_fake_bump_data(num_bins, w, seed, add_noise=False):
     mns = (0.5, 0.7, 0.9, 1.1)
     nzs = []
     for mn in mns:
-        nzs.append(
-            scipy.stats.lognorm.pdf(z / mn, 0.3)
-        )
+        nzs.append(scipy.stats.lognorm.pdf(z / mn, 0.3))
         nzs[-1] = nzs[-1] / np.sum(nzs[-1])
     nzs = np.array(nzs, dtype=np.float64)
 
     zbins = np.array(
-        [[ZBIN_LOW[0], ZBIN_HIGH[-1]]] + [
-            [ZBIN_LOW[i], ZBIN_HIGH[i]]
-            for i in range(ZBIN_LOW.shape[0])
-        ],
+        [[ZBIN_LOW[0], ZBIN_HIGH[-1]]]
+        + [[ZBIN_LOW[i], ZBIN_HIGH[i]] for i in range(ZBIN_LOW.shape[0])],
         dtype=np.float64,
     )
 
@@ -63,7 +59,7 @@ def _make_fake_bump_data(num_bins, w, seed, add_noise=False):
         zbins=zbins,
         params=true_params,
     )
-    cov = np.diagflat((mn * 0.01)**2)
+    cov = np.diagflat((mn * 0.01) ** 2)
     if add_noise:
         mn += rng.normal(size=mn.shape) * np.sqrt(np.diag(cov))
 
@@ -74,7 +70,9 @@ def _make_fake_bump_data(num_bins, w, seed, add_noise=False):
         cov=cov,
         mn_pars=mn_pars,
         zbins=zbins,
-        fixed_param_values={k: v for k, v in true_params.items() if k == "w" or k.startswith("g_b")},
+        fixed_param_values={
+            k: v for k, v in true_params.items() if k == "w" or k.startswith("g_b")
+        },
         num_bins=num_bins,
     )
 
@@ -106,7 +104,7 @@ def test_integration_map():
         seed=42,
     )
 
-    for k in (set(map_params.keys()) | set(true_params.keys())):
+    for k in set(map_params.keys()) | set(true_params.keys()):
         assert k in map_params
         assert k in true_params
         np.testing.assert_allclose(
@@ -156,10 +154,7 @@ def test_integration_mcmc(capsys):
         )
 
         mcmc = run_mcmc(
-            model_module=bump,
-            model_data=model_data,
-            init_params=map_params,
-            seed=42
+            model_module=bump, model_data=model_data, init_params=map_params, seed=42
         )
 
     mcmc.print_summary(exclude_deterministic=True)
@@ -177,7 +172,7 @@ def test_integration_mcmc(capsys):
         assert np.abs(rhat - 1.0) < 0.01, line
 
     samples = mcmc.get_samples()
-    for k in (set(samples.keys()) | set(true_params.keys())):
+    for k in set(samples.keys()) | set(true_params.keys()):
         assert k in samples
         assert k in true_params
         np.testing.assert_allclose(
