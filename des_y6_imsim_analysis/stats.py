@@ -127,6 +127,8 @@ def run_mcmc(*, model_module, model_data, init_params, seed, **mcmc_kwargs):
         model and the values are the parameter values.
     seed : int
         The random seed.
+    mcmc_kwargs : dict
+       Additional keyword arguments to pass to either the NUTS or MCMC constructor.
 
     Return
     ------
@@ -134,6 +136,7 @@ def run_mcmc(*, model_module, model_data, init_params, seed, **mcmc_kwargs):
         The MCMC results.
     """
     max_tree_depth = mcmc_kwargs.pop("max_tree_depth", 10)
+    dense_mass = mcmc_kwargs.pop("dense_mass", False)
     mcmc_kwargs["num_warmup"] = mcmc_kwargs.get("num_warmpup", 500)
     mcmc_kwargs["num_samples"] = mcmc_kwargs.get("num_samples", 1000)
     mcmc_kwargs["num_chains"] = mcmc_kwargs.get("num_chains", 4)
@@ -148,6 +151,7 @@ def run_mcmc(*, model_module, model_data, init_params, seed, **mcmc_kwargs):
         model_module.model,
         init_strategy=init_to_value(values=init_params),
         max_tree_depth=max_tree_depth,
+        dense_mass=dense_mass
     )
     mcmc = MCMC(
         kernel,

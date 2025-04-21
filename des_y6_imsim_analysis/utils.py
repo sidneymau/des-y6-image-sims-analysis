@@ -30,6 +30,9 @@ GMODEL_COSMOS_NZ = np.array([
        0.00451926, 0.00712873, 0.00725519, 0.00469057, 0.00197107,
        0.0006241 , 0.00026623, 0.00026291, 0.00037085, 0.00046587,  # noqa: E203
 ])
+# we remove a small peak in the cosmos n(z) past z = 3 that did not matter in Y3
+GMODEL_COSMOS_NZ[np.where((GMODEL_COSMOS_NZ > 0.00048) & (np.arange(GMODEL_COSMOS_NZ.shape[0]) > 60))] = 0.00048
+
 # fmt: on
 DZ = 0.05
 Z0 = 0.035

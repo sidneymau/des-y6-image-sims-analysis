@@ -162,7 +162,10 @@ def model(
         params["w"] = numpyro.sample("w", dist.LogNormal(np.log(0.1), 0.1))
     for i in range(4):
         if f"g_b{i}" not in fixed_param_values:
-            params[f"g_b{i}"] = numpyro.sample(f"g_b{i}", dist.Normal(0.0, 1.0))
+            # std of softlaplace is pi/2 * scale, so to set std to a value V, we need
+            # to set the scale to V * 2/pi
+            # we use V = 1
+            params[f"g_b{i}"] = numpyro.sample(f"g_b{i}", dist.SoftLaplace(0.0, 1 * 2.0 / jnp.pi))
         for j in range(pts.shape[1]):
             params[f"a{j}_b{i}"] = numpyro.sample(f"a{j}_b{i}", dist.Uniform(-10, 10))
 
