@@ -323,7 +323,7 @@ def lin_interp_integral_nojit(y, x, low, high):
 lin_interp_integral = jax.jit(lin_interp_integral_nojit)
 
 
-def plot_results(*, model_module, model_data, samples=None, map_params=None):
+def plot_results_symlog_nz(*, model_module, model_data, samples=None, map_params=None):
     mn_pars = tuple(tuple(mnp.tolist()) for mnp in model_data["mn_pars"])
     z = model_data["z"]
     nzs = model_data["nz"]
@@ -404,7 +404,7 @@ def plot_results(*, model_module, model_data, samples=None, map_params=None):
         axhist.grid(False)
         axhist.set_yscale("symlog", linthresh=0.2)
         axhist.format(
-            xlim=(0, 4.1),
+            xlim=(0, 4.19),
             ylim=(-0.02, 10.0),
             title=f"bin {bi}",
             titleloc="ul",
@@ -502,6 +502,234 @@ def plot_results(*, model_module, model_data, samples=None, map_params=None):
             #         color="black",
             #         alpha=0.5,
             #     )
+
+    return fig
+
+
+def plot_results_delta_nz(*, model_module, model_data, samples=None, map_params=None):
+    mn_pars = tuple(tuple(mnp.tolist()) for mnp in model_data["mn_pars"])
+    z = model_data["z"]
+    nzs = model_data["nz"]
+    mn = model_data["mn"]
+    cov = model_data["cov"]
+    zbins = model_data["zbins"]
+
+    fig, axs = uplt.subplots(
+        nrows=2,
+        ncols=2,
+        figsize=(8, 6),
+    )
+
+    for bi in range(4):
+        # first extract the stats from fit
+        if samples is not None:
+            ngammas = []
+            for i in range(1000):
+                _params = {}
+                for k, v in samples.items():
+                    _params[k] = v[i]
+                ngamma = model_module.model_mean_smooth_tomobin(
+                    **model_data, tbind=bi, params=_params
+                )
+                ngammas.append(ngamma)
+
+            ngammas = np.array(ngammas)
+            ngamma_mn = np.mean(ngammas, axis=0)
+        elif map_params is not None:
+            ngammas = np.array(
+                [
+                    model_module.model_mean_smooth_tomobin(
+                        **model_data, tbind=bi, params=map_params
+                    )
+                ]
+            )
+            ngamma_mn = ngammas[0]
+        else:
+            raise ValueError("Either samples or map_params must be provided.")
+
+        ngamma_ints = []
+        for ngamma in ngammas:
+            ngamma_int = []
+            for j in range(10):
+                nind = mn_pars.index((j, bi))
+                bin_zmin, bin_zmax = zbins[j + 1]
+                bin_dz = bin_zmax - bin_zmin
+                ngamma_int.append(sompz_integral(ngamma, bin_zmin, bin_zmax))
+            ngamma_ints.append(ngamma_int)
+        ngamma_ints = np.array(ngamma_ints)
+
+        # get the axes
+        bi_row = bi // 2
+        bi_col = bi % 2
+        ax = axs[bi_row, bi_col]
+
+        ax.axhline(0.0, color="black", linestyle="dotted")
+        ax.set_yscale("symlog", linthresh=0.01)
+        ax.format(
+            xlim=(0, 4.19),
+            ylim=(-0.29, 0.39),
+            title=f"bin {bi}",
+            titleloc="ur",
+            xlabel="redshift",
+            ylabel=r"$\Delta n(z)$" if bi % 2 == 0 else None,
+        )
+
+        ax.plot(
+            z,
+            (ngamma_mn - nzs[bi]) / DZ,
+            drawstyle="steps-mid",
+            color="black",
+            linestyle="solid",
+        )
+        if ngammas.shape[0] > 1:
+            ngamma_sd = np.std(ngammas, axis=0)
+            ax.fill_between(
+                z,
+                (ngamma_mn - nzs[bi] - ngamma_sd) / DZ,
+                (ngamma_mn - nzs[bi] + ngamma_sd) / DZ,
+                color="black",
+                alpha=0.5,
+                label="model",
+                step="mid",
+            )
+        for i in range(10):
+            nind = mn_pars.index((i, bi))
+            bin_zmin, bin_zmax = zbins[i + 1]
+            bin_dz = bin_zmax - bin_zmin
+
+            nmcal_val = sompz_integral(nzs[bi], bin_zmin, bin_zmax)
+
+            nga_val = (mn[nind] - nmcal_val) / bin_dz
+            nga_err = np.sqrt(cov[nind, nind]) / bin_dz
+            ax.fill_between(
+                [bin_zmin, bin_zmax],
+                np.ones(2) * nga_val - nga_err,
+                np.ones(2) * nga_val + nga_err,
+                color="blue",
+                alpha=0.5,
+                label=r"$N_{\gamma}^{\alpha}$" if i == 0 else None
+            )
+            ax.hlines(
+                nga_val,
+                bin_zmin,
+                bin_zmax,
+                color="blue",
+            )
+
+            ng_val = (np.mean(ngamma_ints, axis=0)[i] - nmcal_val) / bin_dz
+            ax.hlines(
+                ng_val,
+                bin_zmin,
+                bin_zmax,
+                color="black",
+                label="model integral" if i == 0 else None,
+            )
+            ax.legend(loc="lr", frameon=False, ncols=1)
+
+    return fig
+
+
+def plot_results_fg_model(*, model_module, model_data, map_params=None, samples=None):
+    if samples is None:
+        model_parts_mn = model_module.model_parts_smooth(
+            params=map_params,
+            pts=model_data["pts"],
+            z=model_data["z"],
+            nz=None,
+            mn_pars=None,
+            zbins=None,
+            mn=None,
+            cov=None,
+        )
+        model_parts_sd = None
+    else:
+        model_parts = {bi: {"F": [], "G": []} for bi in range(4)}
+        for si in range(1000):
+            si_params = {}
+            for k, v in samples.items():
+                si_params[k] = v[si]
+
+            si_model_parts = model_module.model_parts_smooth(
+                params=si_params,
+                pts=model_data["pts"],
+                z=model_data["z"],
+                nz=None,
+                mn_pars=None,
+                zbins=None,
+                mn=None,
+                cov=None,
+            )
+            for bi in range(4):
+                model_parts[bi]["F"].append(si_model_parts[bi]["F"])
+                model_parts[bi]["G"].append(si_model_parts[bi]["G"])
+
+        model_parts_mn = {}
+        model_parts_sd = {}
+        for bi in range(4):
+            model_parts_mn[bi] = {
+                "F": np.mean(model_parts[bi]["F"], axis=0),
+                "G": np.mean(model_parts[bi]["G"], axis=0),
+            }
+            model_parts_sd[bi] = {
+                "F": np.std(model_parts[bi]["F"], axis=0),
+                "G": np.std(model_parts[bi]["G"], axis=0),
+            }
+
+    colors = uplt.Cycle("default", N=4).by_key()["color"]
+
+    fig, axs = uplt.subplots(
+        nrows=1,
+        ncols=2,
+        figsize=(8, 4),
+        sharex=False,
+        sharey=False,
+    )
+
+    ax = axs[0, 0]
+    for bi in range(4):
+        ax.plot(
+            model_data["z"],
+            model_parts_mn[bi]["F"],
+            label=f"bin {bi}",
+            color=colors[bi],
+        )
+        if model_parts_sd is not None:
+            ax.fill_between(
+                model_data["z"],
+                model_parts_mn[bi]["F"] - model_parts_sd[bi]["F"],
+                model_parts_mn[bi]["F"] + model_parts_sd[bi]["F"],
+                alpha=0.2,
+                color=colors[bi],
+            )
+
+    ax.legend(loc="ll", frameon=False, ncols=1)
+    ax.format(
+        xlim=(0, 4.19),
+        xlabel="redshift",
+        ylabel=r"$F(z)$",
+    )
+
+    ax = axs[0, 1]
+    for bi in range(4):
+        ax.plot(
+            model_data["z"],
+            model_parts_mn[bi]["G"],
+            label=f"bin {bi}",
+            color=colors[bi],
+        )
+        if model_parts_sd is not None:
+            ax.fill_between(
+                model_data["z"],
+                model_parts_mn[bi]["G"] - model_parts_sd[bi]["G"],
+                model_parts_mn[bi]["G"] + model_parts_sd[bi]["G"],
+                alpha=0.2,
+                color=colors[bi],
+            )
+    ax.format(
+        xlim=(0, 4.19),
+        xlabel="redshift",
+        ylabel=r"$G(z)$",
+    )
 
     return fig
 
