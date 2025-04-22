@@ -30,6 +30,9 @@ GMODEL_COSMOS_NZ = np.array([
        0.00451926, 0.00712873, 0.00725519, 0.00469057, 0.00197107,
        0.0006241 , 0.00026623, 0.00026291, 0.00037085, 0.00046587,  # noqa: E203
 ])
+# we remove a small peak in the cosmos n(z) past z = 3 that did not matter in Y3
+GMODEL_COSMOS_NZ[np.where((GMODEL_COSMOS_NZ > 0.00048) & (np.arange(GMODEL_COSMOS_NZ.shape[0]) > 60))] = 0.00048
+
 # fmt: on
 DZ = 0.05
 Z0 = 0.035
@@ -50,16 +53,13 @@ ModelData = namedtuple(
 )
 
 
-def read_data(filename, redshift_type="true"):
+def read_data(filename):
     """Read the data from the given filename.
 
     Parameters
     ----------
     filename : str
         The name of the file to read.
-    redshift_type : str
-        The type of redshift to read. Either "true" or "sompz".
-        Default is "true".
 
     Returns
     -------
@@ -77,17 +77,18 @@ def read_data(filename, redshift_type="true"):
             zbins.append(d[f"alpha/bin{zbin}"][:].astype(np.float64))
         zbins = np.array(zbins)
 
-        z = d[f"redshift/{redshift_type}/zbinsc"][:].astype(np.float64)
+        z = d["redshift/zbinsc"][:].astype(np.float64)
         if np.allclose(z[0], 0.0):
             cutind = 1
         else:
             cutind = 0
         z = z[cutind:]
 
-        nzs = {}
+        nzs = []
         for _bin in range(4):
-            nzs[_bin] = d[f"redshift/{redshift_type}/bin{_bin}"][:].astype(np.float64)
-            nzs[_bin] = nzs[_bin][cutind:] / np.sum(nzs[_bin][cutind:])
+            nzs.append(d[f"redshift/bin{_bin}"][:].astype(np.float64))
+            nzs[-1] = nzs[-1][cutind:] / np.sum(nzs[-1][cutind:])
+        nzs = np.array(nzs, dtype=np.float64)
 
     return ModelData(z=z, nzs=nzs, mn_pars=mn_pars, zbins=zbins, mn=mn, cov=cov)
 
@@ -322,7 +323,7 @@ def lin_interp_integral_nojit(y, x, low, high):
 lin_interp_integral = jax.jit(lin_interp_integral_nojit)
 
 
-def plot_results(*, model_module, model_data, samples=None, map_params=None):
+def plot_results_symlog_nz(*, model_module, model_data, samples=None, map_params=None):
     mn_pars = tuple(tuple(mnp.tolist()) for mnp in model_data["mn_pars"])
     z = model_data["z"]
     nzs = model_data["nz"]
@@ -403,7 +404,7 @@ def plot_results(*, model_module, model_data, samples=None, map_params=None):
         axhist.grid(False)
         axhist.set_yscale("symlog", linthresh=0.2)
         axhist.format(
-            xlim=(0, 4.1),
+            xlim=(0, 4.19),
             ylim=(-0.02, 10.0),
             title=f"bin {bi}",
             titleloc="ul",
@@ -505,7 +506,235 @@ def plot_results(*, model_module, model_data, samples=None, map_params=None):
     return fig
 
 
-def measure_m_dz(*, model_module, model_data, samples=None, return_dict=False):
+def plot_results_delta_nz(*, model_module, model_data, samples=None, map_params=None):
+    mn_pars = tuple(tuple(mnp.tolist()) for mnp in model_data["mn_pars"])
+    z = model_data["z"]
+    nzs = model_data["nz"]
+    mn = model_data["mn"]
+    cov = model_data["cov"]
+    zbins = model_data["zbins"]
+
+    fig, axs = uplt.subplots(
+        nrows=2,
+        ncols=2,
+        figsize=(8, 6),
+    )
+
+    for bi in range(4):
+        # first extract the stats from fit
+        if samples is not None:
+            ngammas = []
+            for i in range(1000):
+                _params = {}
+                for k, v in samples.items():
+                    _params[k] = v[i]
+                ngamma = model_module.model_mean_smooth_tomobin(
+                    **model_data, tbind=bi, params=_params
+                )
+                ngammas.append(ngamma)
+
+            ngammas = np.array(ngammas)
+            ngamma_mn = np.mean(ngammas, axis=0)
+        elif map_params is not None:
+            ngammas = np.array(
+                [
+                    model_module.model_mean_smooth_tomobin(
+                        **model_data, tbind=bi, params=map_params
+                    )
+                ]
+            )
+            ngamma_mn = ngammas[0]
+        else:
+            raise ValueError("Either samples or map_params must be provided.")
+
+        ngamma_ints = []
+        for ngamma in ngammas:
+            ngamma_int = []
+            for j in range(10):
+                nind = mn_pars.index((j, bi))
+                bin_zmin, bin_zmax = zbins[j + 1]
+                bin_dz = bin_zmax - bin_zmin
+                ngamma_int.append(sompz_integral(ngamma, bin_zmin, bin_zmax))
+            ngamma_ints.append(ngamma_int)
+        ngamma_ints = np.array(ngamma_ints)
+
+        # get the axes
+        bi_row = bi // 2
+        bi_col = bi % 2
+        ax = axs[bi_row, bi_col]
+
+        ax.axhline(0.0, color="black", linestyle="dotted")
+        ax.set_yscale("symlog", linthresh=0.01)
+        ax.format(
+            xlim=(0, 4.19),
+            ylim=(-0.29, 0.39),
+            title=f"bin {bi}",
+            titleloc="ur",
+            xlabel="redshift",
+            ylabel=r"$\Delta n(z)$" if bi % 2 == 0 else None,
+        )
+
+        ax.plot(
+            z,
+            (ngamma_mn - nzs[bi]) / DZ,
+            drawstyle="steps-mid",
+            color="black",
+            linestyle="solid",
+        )
+        if ngammas.shape[0] > 1:
+            ngamma_sd = np.std(ngammas, axis=0)
+            ax.fill_between(
+                z,
+                (ngamma_mn - nzs[bi] - ngamma_sd) / DZ,
+                (ngamma_mn - nzs[bi] + ngamma_sd) / DZ,
+                color="black",
+                alpha=0.5,
+                label="model",
+                step="mid",
+            )
+        for i in range(10):
+            nind = mn_pars.index((i, bi))
+            bin_zmin, bin_zmax = zbins[i + 1]
+            bin_dz = bin_zmax - bin_zmin
+
+            nmcal_val = sompz_integral(nzs[bi], bin_zmin, bin_zmax)
+
+            nga_val = (mn[nind] - nmcal_val) / bin_dz
+            nga_err = np.sqrt(cov[nind, nind]) / bin_dz
+            ax.fill_between(
+                [bin_zmin, bin_zmax],
+                np.ones(2) * nga_val - nga_err,
+                np.ones(2) * nga_val + nga_err,
+                color="blue",
+                alpha=0.5,
+                label=r"$N_{\gamma}^{\alpha}$" if i == 0 else None
+            )
+            ax.hlines(
+                nga_val,
+                bin_zmin,
+                bin_zmax,
+                color="blue",
+            )
+
+            ng_val = (np.mean(ngamma_ints, axis=0)[i] - nmcal_val) / bin_dz
+            ax.hlines(
+                ng_val,
+                bin_zmin,
+                bin_zmax,
+                color="black",
+                label="model integral" if i == 0 else None,
+            )
+            ax.legend(loc="lr", frameon=False, ncols=1)
+
+    return fig
+
+
+def plot_results_fg_model(*, model_module, model_data, map_params=None, samples=None):
+    if samples is None:
+        model_parts_mn = model_module.model_parts_smooth(
+            params=map_params,
+            pts=model_data["pts"],
+            z=model_data["z"],
+            nz=None,
+            mn_pars=None,
+            zbins=None,
+            mn=None,
+            cov=None,
+        )
+        model_parts_sd = None
+    else:
+        model_parts = {bi: {"F": [], "G": []} for bi in range(4)}
+        for si in range(1000):
+            si_params = {}
+            for k, v in samples.items():
+                si_params[k] = v[si]
+
+            si_model_parts = model_module.model_parts_smooth(
+                params=si_params,
+                pts=model_data["pts"],
+                z=model_data["z"],
+                nz=None,
+                mn_pars=None,
+                zbins=None,
+                mn=None,
+                cov=None,
+            )
+            for bi in range(4):
+                model_parts[bi]["F"].append(si_model_parts[bi]["F"])
+                model_parts[bi]["G"].append(si_model_parts[bi]["G"])
+
+        model_parts_mn = {}
+        model_parts_sd = {}
+        for bi in range(4):
+            model_parts_mn[bi] = {
+                "F": np.mean(model_parts[bi]["F"], axis=0),
+                "G": np.mean(model_parts[bi]["G"], axis=0),
+            }
+            model_parts_sd[bi] = {
+                "F": np.std(model_parts[bi]["F"], axis=0),
+                "G": np.std(model_parts[bi]["G"], axis=0),
+            }
+
+    colors = uplt.Cycle("default", N=4).by_key()["color"]
+
+    fig, axs = uplt.subplots(
+        nrows=1,
+        ncols=2,
+        figsize=(8, 4),
+        sharex=False,
+        sharey=False,
+    )
+
+    ax = axs[0, 0]
+    for bi in range(4):
+        ax.plot(
+            model_data["z"],
+            model_parts_mn[bi]["F"],
+            label=f"bin {bi}",
+            color=colors[bi],
+        )
+        if model_parts_sd is not None:
+            ax.fill_between(
+                model_data["z"],
+                model_parts_mn[bi]["F"] - model_parts_sd[bi]["F"],
+                model_parts_mn[bi]["F"] + model_parts_sd[bi]["F"],
+                alpha=0.2,
+                color=colors[bi],
+            )
+
+    ax.legend(loc="ll", frameon=False, ncols=1)
+    ax.format(
+        xlim=(0, 4.19),
+        xlabel="redshift",
+        ylabel=r"$F(z)$",
+    )
+
+    ax = axs[0, 1]
+    for bi in range(4):
+        ax.plot(
+            model_data["z"],
+            model_parts_mn[bi]["G"],
+            label=f"bin {bi}",
+            color=colors[bi],
+        )
+        if model_parts_sd is not None:
+            ax.fill_between(
+                model_data["z"],
+                model_parts_mn[bi]["G"] - model_parts_sd[bi]["G"],
+                model_parts_mn[bi]["G"] + model_parts_sd[bi]["G"],
+                alpha=0.2,
+                color=colors[bi],
+            )
+    ax.format(
+        xlim=(0, 4.19),
+        xlabel="redshift",
+        ylabel=r"$G(z)$",
+    )
+
+    return fig
+
+
+def measure_m_dz(*, model_module, model_data, samples, return_dict=False):
     nzs = model_data["nz"]
     n_samples = 1000
     data = np.zeros((8, n_samples))
@@ -541,3 +770,94 @@ def measure_m_dz(*, model_module, model_data, samples=None, return_dict=False):
         data = data.T
 
     return data
+
+
+def compute_eff_nz_from_data(*, model_module, mcmc_samples, model_data, input_nz, rng):
+    """Compute the effective nz for a given set of input n(z) values and MCMC samples
+    for the model parameters.
+
+    Parameters
+    ----------
+    model_module : module
+        The module containing the model functions.
+    mcmc_samples : dict
+        The MCMC samples for the model parameters. Dict is keyed on parameter name
+        with an array of samples for each parameter.
+    model_data : dict
+        The model data containing the necessary information for the model. Produced from
+        `model_module.make_model_data`.
+    input_nz : array
+        The input n(z) values. Shape is (# of input nzs, # of tomo bins, nz dimension).
+    rng : np.random.RandomState
+        Random number generator for sampling.
+
+    Returns
+    -------
+    mvals : array
+        The values of m for each input n(z) and model parameter sample. Shape is
+        (# of input nzs, # of tomo bins).
+    dzvals : array
+        The values of dz for each input n(z) and model parameter sample. Shape is
+        (# of input nzs, # of tomo bins).
+    finalnzs : array
+        The final n(z) values for each input n(z) and model parameter sample. Shape is
+        (# of input nzs, # of tomo bins, nz dimension).
+    """
+    test_key = list(mcmc_samples.keys())[0]
+    n_tomo = input_nz.shape[1]
+    assert n_tomo == 4
+
+    assert input_nz.shape[1] == 4
+    assert input_nz.shape[2] == model_data["z"].shape[0]
+
+    key_mvals = []
+    key_dzvals = []
+    key_finalnzs = []
+    for i in range(input_nz.shape[0]):
+        rind = rng.choice(mcmc_samples[test_key].shape[0])
+
+        params = {k: mcmc_samples[k][rind] for k in mcmc_samples.keys()}
+        nz = input_nz[i, :, :].copy()
+        for _i in range(n_tomo):
+            nz[_i, :] = nz[_i, :] / np.sum(nz[_i, :])
+        model_nz = model_module.model_mean_smooth(
+            pts=model_data["pts"],
+            z=model_data["z"],
+            nz=nz,
+            mn_pars=model_data["mn_pars"],
+            zbins=model_data["zbins"],
+            params=params,
+            mn=None,
+            cov=None,
+        )
+
+        model_nz = np.array(model_nz)
+        assert model_nz.shape == (n_tomo, model_data["z"].shape[0])
+
+        key_mvals.append(
+            [float(sompz_integral(model_nz[_i, :], 0, 6) - 1) for _i in range(n_tomo)]
+        )
+
+        for _i in range(n_tomo):
+            model_nz[_i, :] = model_nz[_i, :] / np.sum(model_nz[_i, :])
+
+        key_finalnzs.append(model_nz)
+        key_dzvals.append(
+            [
+                float(
+                    compute_nz_binned_mean(model_nz[_i, :])
+                    - compute_nz_binned_mean(nz[_i, :])
+                )
+                for _i in range(n_tomo)
+            ]
+        )
+
+    mvals = np.array(key_mvals)
+    dzvals = np.array(key_dzvals)
+    finalnzs = np.array(key_finalnzs)
+
+    assert mvals.shape == (input_nz.shape[0], n_tomo)
+    assert dzvals.shape == (input_nz.shape[0], n_tomo)
+    assert finalnzs.shape == (input_nz.shape[0], n_tomo, input_nz.shape[-1])
+
+    return mvals, dzvals, finalnzs
