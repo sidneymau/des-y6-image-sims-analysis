@@ -151,7 +151,7 @@ def run_mcmc(*, model_module, model_data, init_params, seed, **mcmc_kwargs):
         model_module.model,
         init_strategy=init_to_value(values=init_params),
         max_tree_depth=max_tree_depth,
-        dense_mass=dense_mass
+        dense_mass=dense_mass,
     )
     mcmc = MCMC(
         kernel,

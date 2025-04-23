@@ -66,9 +66,11 @@ def read_data(filename):
     ModelData
         The data read from the file as a `ModelData` named tuple.
     """
+    ns = 981
+
     with h5py.File(filename) as d:
         mn = d["shear/mean"][:].astype(np.float64)
-        cov = d["shear/cov"][:].astype(np.float64)
+        cov = d["shear/cov"][:].astype(np.float64) * (ns - 1) / (ns - len(mn) - 2)
         mn_pars = tuple(
             tuple(v) for v in d["shear/mean_params"][:].astype(np.int64).tolist()
         )
@@ -402,7 +404,7 @@ def plot_results_symlog_nz(*, model_module, model_data, samples=None, map_params
         # plot the stuff
         axhist.axhline(0.0, color="black", linestyle="dotted")
         axhist.grid(False)
-        axhist.set_yscale("symlog", linthresh=0.2)
+        axhist.set_yscale("symlog", linthresh=0.02)
         axhist.format(
             xlim=(0, 4.19),
             ylim=(-0.02, 10.0),
@@ -564,7 +566,7 @@ def plot_results_delta_nz(*, model_module, model_data, samples=None, map_params=
         ax = axs[bi_row, bi_col]
 
         ax.axhline(0.0, color="black", linestyle="dotted")
-        ax.set_yscale("symlog", linthresh=0.01)
+        ax.set_yscale("symlog", linthresh=0.02)
         ax.format(
             xlim=(0, 4.19),
             ylim=(-0.29, 0.39),
@@ -607,7 +609,7 @@ def plot_results_delta_nz(*, model_module, model_data, samples=None, map_params=
                 np.ones(2) * nga_val + nga_err,
                 color="blue",
                 alpha=0.5,
-                label=r"$N_{\gamma}^{\alpha}$" if i == 0 else None
+                label=r"$N_{\gamma}^{\alpha}$" if i == 0 else None,
             )
             ax.hlines(
                 nga_val,
@@ -630,16 +632,17 @@ def plot_results_delta_nz(*, model_module, model_data, samples=None, map_params=
 
 
 def plot_results_fg_model(*, model_module, model_data, map_params=None, samples=None):
+    kwargs = {k: model_data[k] for k in model_data["extra_kwargs"]}
     if samples is None:
         model_parts_mn = model_module.model_parts_smooth(
             params=map_params,
-            pts=model_data["pts"],
             z=model_data["z"],
             nz=None,
             mn_pars=None,
             zbins=None,
             mn=None,
             cov=None,
+            **kwargs,
         )
         model_parts_sd = None
     else:
@@ -651,13 +654,13 @@ def plot_results_fg_model(*, model_module, model_data, map_params=None, samples=
 
             si_model_parts = model_module.model_parts_smooth(
                 params=si_params,
-                pts=model_data["pts"],
                 z=model_data["z"],
                 nz=None,
                 mn_pars=None,
                 zbins=None,
                 mn=None,
                 cov=None,
+                **kwargs,
             )
             for bi in range(4):
                 model_parts[bi]["F"].append(si_model_parts[bi]["F"])
@@ -675,61 +678,93 @@ def plot_results_fg_model(*, model_module, model_data, map_params=None, samples=
                 "G": np.std(model_parts[bi]["G"], axis=0),
             }
 
+    all_g_zero = True
+    for bi in range(4):
+        if np.any(model_parts_mn[bi]["G"] != 0.0):
+            all_g_zero = False
+            break
+    plot_g = not all_g_zero
+
+    all_f_zero = True
+    for bi in range(4):
+        if np.any(model_parts_mn[bi]["F"] != 0.0):
+            all_f_zero = False
+            break
+    plot_f = not all_f_zero
+
+    if plot_f and plot_g:
+        ncols = 2
+    else:
+        ncols = 1
+
     colors = uplt.Cycle("default", N=4).by_key()["color"]
 
     fig, axs = uplt.subplots(
         nrows=1,
-        ncols=2,
-        figsize=(8, 4),
+        ncols=ncols,
+        figsize=(8, 4) if ncols == 2 else (5, 5),
         sharex=False,
         sharey=False,
     )
 
-    ax = axs[0, 0]
-    for bi in range(4):
-        ax.plot(
-            model_data["z"],
-            model_parts_mn[bi]["F"],
-            label=f"bin {bi}",
-            color=colors[bi],
-        )
-        if model_parts_sd is not None:
-            ax.fill_between(
+    if ncols == 2:
+        axf = axs[0, 0]
+        axg = axs[0, 1]
+    else:
+        if plot_f:
+            axf = axs[0]
+            axg = None
+        else:
+            axf = None
+            axg = axs[0]
+
+    if axf is not None:
+        ax = axf
+        for bi in range(4):
+            ax.plot(
                 model_data["z"],
-                model_parts_mn[bi]["F"] - model_parts_sd[bi]["F"],
-                model_parts_mn[bi]["F"] + model_parts_sd[bi]["F"],
-                alpha=0.2,
+                model_parts_mn[bi]["F"],
+                label=f"bin {bi}",
                 color=colors[bi],
             )
+            if model_parts_sd is not None:
+                ax.fill_between(
+                    model_data["z"],
+                    model_parts_mn[bi]["F"] - model_parts_sd[bi]["F"],
+                    model_parts_mn[bi]["F"] + model_parts_sd[bi]["F"],
+                    alpha=0.2,
+                    color=colors[bi],
+                )
 
-    ax.legend(loc="ll", frameon=False, ncols=1)
-    ax.format(
-        xlim=(0, 4.19),
-        xlabel="redshift",
-        ylabel=r"$F(z)$",
-    )
-
-    ax = axs[0, 1]
-    for bi in range(4):
-        ax.plot(
-            model_data["z"],
-            model_parts_mn[bi]["G"],
-            label=f"bin {bi}",
-            color=colors[bi],
+        ax.legend(loc="ll", frameon=False, ncols=1)
+        ax.format(
+            xlim=(0, 4.19),
+            xlabel="redshift",
+            ylabel=r"$F(z)$",
         )
-        if model_parts_sd is not None:
-            ax.fill_between(
+
+    if axg is not None:
+        ax = axg
+        for bi in range(4):
+            ax.plot(
                 model_data["z"],
-                model_parts_mn[bi]["G"] - model_parts_sd[bi]["G"],
-                model_parts_mn[bi]["G"] + model_parts_sd[bi]["G"],
-                alpha=0.2,
+                model_parts_mn[bi]["G"],
+                label=f"bin {bi}",
                 color=colors[bi],
             )
-    ax.format(
-        xlim=(0, 4.19),
-        xlabel="redshift",
-        ylabel=r"$G(z)$",
-    )
+            if model_parts_sd is not None:
+                ax.fill_between(
+                    model_data["z"],
+                    model_parts_mn[bi]["G"] - model_parts_sd[bi]["G"],
+                    model_parts_mn[bi]["G"] + model_parts_sd[bi]["G"],
+                    alpha=0.2,
+                    color=colors[bi],
+                )
+        ax.format(
+            xlim=(0, 4.19),
+            xlabel="redshift",
+            ylabel=r"$G(z)$",
+        )
 
     return fig
 
@@ -772,7 +807,9 @@ def measure_m_dz(*, model_module, model_data, samples, return_dict=False):
     return data
 
 
-def compute_eff_nz_from_data(*, model_module, mcmc_samples, model_data, input_nz, rng):
+def compute_eff_nz_from_data(
+    *, model_module, mcmc_samples, model_data, input_nz, rng, clip_zero=False
+):
     """Compute the effective nz for a given set of input n(z) values and MCMC samples
     for the model parameters.
 
@@ -790,6 +827,8 @@ def compute_eff_nz_from_data(*, model_module, mcmc_samples, model_data, input_nz
         The input n(z) values. Shape is (# of input nzs, # of tomo bins, nz dimension).
     rng : np.random.RandomState
         Random number generator for sampling.
+    clip_zero : bool, optional
+        If True, clip the output finalnzs to be strictly non-negative. Default is False.
 
     Returns
     -------
@@ -803,6 +842,8 @@ def compute_eff_nz_from_data(*, model_module, mcmc_samples, model_data, input_nz
         The final n(z) values for each input n(z) and model parameter sample. Shape is
         (# of input nzs, # of tomo bins, nz dimension).
     """
+    kwargs = {k: model_data[k] for k in model_data["extra_kwargs"]}
+
     test_key = list(mcmc_samples.keys())[0]
     n_tomo = input_nz.shape[1]
     assert n_tomo == 4
@@ -821,7 +862,6 @@ def compute_eff_nz_from_data(*, model_module, mcmc_samples, model_data, input_nz
         for _i in range(n_tomo):
             nz[_i, :] = nz[_i, :] / np.sum(nz[_i, :])
         model_nz = model_module.model_mean_smooth(
-            pts=model_data["pts"],
             z=model_data["z"],
             nz=nz,
             mn_pars=model_data["mn_pars"],
@@ -829,10 +869,16 @@ def compute_eff_nz_from_data(*, model_module, mcmc_samples, model_data, input_nz
             params=params,
             mn=None,
             cov=None,
+            **kwargs,
         )
 
         model_nz = np.array(model_nz)
         assert model_nz.shape == (n_tomo, model_data["z"].shape[0])
+
+        if clip_zero:
+            msk = model_nz < 0.0
+            if np.any(msk):
+                model_nz[msk] = 0.0
 
         key_mvals.append(
             [float(sompz_integral(model_nz[_i, :], 0, 6) - 1) for _i in range(n_tomo)]
