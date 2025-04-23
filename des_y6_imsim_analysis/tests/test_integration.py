@@ -301,7 +301,7 @@ def test_integration_interpolant_map_chi2(add_noise, model_kind):
         map_params = measure_map(
             model_module=interpolant,
             model_data=model_data,
-            seed=42,
+            seed=654,
             num_steps=100_000,
         )
     else:
