@@ -47,7 +47,7 @@ def model_parts_smooth(
             fvals += params[f"a{j}_b{i}"] * _bump(
                 z, pts[i, j, 0], pts[i, j, 1], params["w"]
             )
-        model_parts[i]["F"] = fvals * (1.0 - jax.nn.sigmoid((z - 3.7) / params["w"]))
+        model_parts[i]["F"] = fvals
 
         g = params.get(f"g_b{i}", 0.0)
         model_parts[i]["G"] = g * gtemp
@@ -182,7 +182,7 @@ def model(
             params[f"g_b{i}"] = numpyro.sample(f"g_b{i}", dist.HalfNormal(1.0))
         for j in range(pts.shape[1]):
             params[f"a{j}_b{i}"] = numpyro.sample(
-                f"a{j}_b{i}", dist.Uniform(-1.0, 10.0)
+                f"a{j}_b{i}", dist.Uniform(-10.0, 10.0)
             )
 
     for k, v in fixed_param_values.items():
