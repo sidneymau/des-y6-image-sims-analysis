@@ -27,6 +27,13 @@ def flux_to_mag(flux):
     return const.ZEROPOINT - 2.5 * np.log10(flux)
 
 
+def flux_to_mag_with_error(flux, flux_err):
+    _mag = flux_to_mag(flux)
+    # _mag_err = 2.5 / np.log(10) * _mag * flux_err
+    _mag_err = -2.5 * np.log10(1 + flux_err / flux)
+    return _mag, _mag_err
+
+
 def mag_to_flux(mag):
     return np.power(
         10,
