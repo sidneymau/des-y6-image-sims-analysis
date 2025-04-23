@@ -66,11 +66,9 @@ def read_data(filename):
     ModelData
         The data read from the file as a `ModelData` named tuple.
     """
-    ns = 981
-
     with h5py.File(filename) as d:
         mn = d["shear/mean"][:].astype(np.float64)
-        cov = d["shear/cov"][:].astype(np.float64) * (ns - 1) / (ns - len(mn) - 2)
+        cov = d["shear/cov"][:].astype(np.float64)
         mn_pars = tuple(
             tuple(v) for v in d["shear/mean_params"][:].astype(np.int64).tolist()
         )
