@@ -17,7 +17,7 @@ def measure_map(
     model_module,
     model_data,
     seed,
-    num_steps=50_000,
+    num_steps=75_000,
     learning_rate=1e-3,
     progress_bar=False,
 ):
