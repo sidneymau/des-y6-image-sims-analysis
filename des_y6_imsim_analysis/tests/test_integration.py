@@ -123,11 +123,14 @@ def test_integration_bump_map_chi2(add_noise):
     model_data = fake_data["model_data"]
     data = fake_data["data"]
 
-    map_params = measure_map(
-        model_module=bump,
-        model_data=model_data,
-        seed=42,
-    )
+    if add_noise:
+        map_params = measure_map(
+            model_module=bump,
+            model_data=model_data,
+            seed=42,
+        )
+    else:
+        map_params = fake_data["true_params"]
 
     chi2_info = compute_model_chi2_info(
         model_module=bump,
@@ -135,8 +138,10 @@ def test_integration_bump_map_chi2(add_noise):
         data=data,
         params=map_params,
     )
+    print(chi2_info)
+
     if not add_noise:
-        assert np.abs(chi2_info["p_value"] - 0.5) >= 0.45, chi2_info
+        assert np.allclose(chi2_info["chi2"], 0.0), chi2_info
     else:
         assert np.abs(chi2_info["p_value"] - 0.5) < 0.45, chi2_info
 
@@ -292,12 +297,15 @@ def test_integration_interpolant_map_chi2(add_noise, model_kind):
     model_data = fake_data["model_data"]
     data = fake_data["data"]
 
-    map_params = measure_map(
-        model_module=interpolant,
-        model_data=model_data,
-        seed=42,
-        num_steps=100_000,
-    )
+    if add_noise:
+        map_params = measure_map(
+            model_module=interpolant,
+            model_data=model_data,
+            seed=42,
+            num_steps=100_000,
+        )
+    else:
+        map_params = fake_data["true_params"]
 
     chi2_info = compute_model_chi2_info(
         model_module=interpolant,
@@ -306,7 +314,7 @@ def test_integration_interpolant_map_chi2(add_noise, model_kind):
         params=map_params,
     )
     if not add_noise:
-        assert np.abs(chi2_info["p_value"] - 0.5) >= 0.45, chi2_info
+        assert np.allclose(chi2_info["chi2"], 0.0), chi2_info
     else:
         assert np.abs(chi2_info["p_value"] - 0.5) < 0.45, chi2_info
 

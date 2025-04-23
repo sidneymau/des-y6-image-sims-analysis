@@ -807,8 +807,68 @@ def measure_m_dz(*, model_module, model_data, samples, return_dict=False):
     return data
 
 
+def shift_negative_nz_values(nz):
+    """Shift negative values in an n(z) to adjacent positive bins.
+
+    Parameters
+    ----------
+    nz : array
+        The n(z) values.
+
+    Returns
+    -------
+    array
+        The n(z) values with negative values shifted to adjacent positive bins.
+    """
+    msk = nz < 0.0
+    if np.any(msk):
+        for nind in np.where(msk)[0]:
+            if nind == 0:
+                shifts = [1]
+            elif nind == nz.shape[0] - 1:
+                shifts = [-1]
+            else:
+                shifts = [-1, 1]
+            lim_val = np.abs(nz[nind])
+
+            shift_inds = []
+            for shift in shifts:
+                done = False
+                shift_ind = nind + shift
+                while not done and shift_ind >= 0 and shift_ind < nz.shape[0]:
+                    if nz[shift_ind] >= lim_val:
+                        shift_inds.append(shift_ind)
+                        done = True
+
+                    shift_ind += shift
+
+                if not done:
+                    shift_inds.append(None)
+
+            shift_inds = [si for si in shift_inds if si is not None]
+            assert len(shift_inds) > 0
+
+            half_neg = nz[nind] / len(shift_inds)
+            for shift_ind in shift_inds:
+                nz[shift_ind] = nz[shift_ind] + half_neg
+
+            nz[nind] = 0.0
+
+        assert np.all(nz >= 0.0), "negative n(z) values remain!"
+
+    return nz
+
+
 def compute_eff_nz_from_data(
-    *, model_module, mcmc_samples, model_data, input_nz, rng, clip_zero=False
+    *,
+    model_module,
+    mcmc_samples,
+    model_data,
+    input_nz,
+    rng,
+    clip_zero=False,
+    shift_negative=False,
+    progress_bar=False,
 ):
     """Compute the effective nz for a given set of input n(z) values and MCMC samples
     for the model parameters.
@@ -829,6 +889,11 @@ def compute_eff_nz_from_data(
         Random number generator for sampling.
     clip_zero : bool, optional
         If True, clip the output finalnzs to be strictly non-negative. Default is False.
+    shift_negative : bool, optional
+        If True, attempt to shift negative n(z) values to adjacent positive bins.
+        Default is False.
+    progress_bar : bool, optional
+        If True, show a progress bar for the computation. Default is False.
 
     Returns
     -------
@@ -842,6 +907,18 @@ def compute_eff_nz_from_data(
         The final n(z) values for each input n(z) and model parameter sample. Shape is
         (# of input nzs, # of tomo bins, nz dimension).
     """
+    if progress_bar:
+        import tqdm
+
+        range_gen = tqdm.trange(input_nz.shape[0])
+    else:
+        range_gen = range(input_nz.shape[0])
+
+    if clip_zero and shift_negative:
+        raise ValueError(
+            "Cannot use both clip_zero and shift_negative at the same time!"
+        )
+
     kwargs = {k: model_data[k] for k in model_data["extra_kwargs"]}
 
     test_key = list(mcmc_samples.keys())[0]
@@ -854,7 +931,7 @@ def compute_eff_nz_from_data(
     key_mvals = []
     key_dzvals = []
     key_finalnzs = []
-    for i in range(input_nz.shape[0]):
+    for i in range_gen:
         rind = rng.choice(mcmc_samples[test_key].shape[0])
 
         params = {k: mcmc_samples[k][rind] for k in mcmc_samples.keys()}
@@ -879,6 +956,12 @@ def compute_eff_nz_from_data(
             msk = model_nz < 0.0
             if np.any(msk):
                 model_nz[msk] = 0.0
+
+        # find the nearest bins above and below with amplitude > negative value / 2
+        # and add the negative value there
+        if shift_negative:
+            for bi in range(4):
+                model_nz[bi, :] = shift_negative_nz_values(model_nz[bi, :])
 
         key_mvals.append(
             [float(sompz_integral(model_nz[_i, :], 0, 6) - 1) for _i in range(n_tomo)]
