@@ -296,7 +296,7 @@ def test_integration_interpolant_map_chi2(add_noise, model_kind):
         model_module=interpolant,
         model_data=model_data,
         seed=42,
-        num_steps=75_000,
+        num_steps=100_000,
     )
 
     chi2_info = compute_model_chi2_info(
