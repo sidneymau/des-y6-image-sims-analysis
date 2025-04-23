@@ -1,3 +1,4 @@
+import argparse
 import concurrent.futures
 import functools
 import itertools
@@ -31,6 +32,36 @@ ALPHA_BINS = [-1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
 ZBINSC = np.arange(0.035, 4, 0.05)
 ZEDGES = np.arange(0.01, 4.02, 0.05)
 
+def get_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--seed",
+        type=int,
+        required=False,
+        default=None,
+        help="RNG seed [int]",
+    )
+    parser.add_argument(
+        "--resample",
+        type=str,
+        choices=["bootstrap", "jackknife"],
+        default="jackknife",
+        required=False,
+        help="resample algorithm",
+    )
+    parser.add_argument(
+        "--weights",
+        type=str,
+        choices=["statistical", "neighbor", "occupancy", "nz"],
+        nargs="+",
+        default=["statistical"],
+        required=False,
+        help="weight keys to use",
+    )
+
+    return parser.parse_args()
+
+
 
 def _compute_nz(cells, zs, weights, responses, zedges=ZEDGES, zbinsc=ZBINSC):
     _zs = np.copy(zs)
@@ -56,6 +87,7 @@ def _compute_nz(cells, zs, weights, responses, zedges=ZEDGES, zbinsc=ZBINSC):
         nz[tomographic_bin] = nz[tomographic_bin] / np.sum(nz[tomographic_bin]) / np.diff(zedges)
 
     return nz
+
 
 def compute_nz(shear_step_plus, shear_step_minus, weight_keys, zedges=ZEDGES, zbinsc=ZBINSC):
     with (
@@ -212,27 +244,9 @@ def process_pair(shear_step_plus, shear_step_minus, weight_keys, seed=None, resa
     tomo_minus = h5py.File(lib.const.SIM_TOMOGRAPHY_CATALOGS[shear_step_minus])
     weight_minus = h5py.File(lib.const.SIM_WEIGHT_CATALOGS[shear_step_minus])
 
-    # bhat_plus = {
-    #     mdet_step: lib.tomography.get_tomography(
-    #         hf_plus,
-    #         hf_redshift_plus,
-    #         mdet_step,
-    #     )
-    #     for mdet_step in lib.const.MDET_STEPS
-    # }
-    # bhat_minus = {
-    #     mdet_step: lib.tomography.get_tomography(
-    #         hf_minus,
-    #         hf_redshift_minus,
-    #         mdet_step,
-    #     )
-    #     for mdet_step in lib.const.MDET_STEPS
-    # }
-
     tilenames_p = np.unique(shear_plus["mdet"]["noshear"]["tilename"][:])
     tilenames_m = np.unique(shear_minus["mdet"]["noshear"]["tilename"][:])
     tilenames = np.intersect1d(tilenames_p, tilenames_m)
-    # tilenames = tilenames[:10]  # FIXME
     ntiles = len(tilenames)
 
     results = {}
@@ -281,8 +295,18 @@ def process_pair(shear_step_plus, shear_step_minus, weight_keys, seed=None, resa
 
 def main():
 
-    kwargs = {"seed": None, "resample": "jackknife"}
+    # kwargs = {"seed": None, "resample": "jackknife"}
     # kwargs = {"seed": 42, "resample": "bootstrap"}
+    args = get_args()
+
+    seed = args.seed
+    resample = args.resample
+    weights = args.weights
+
+    weight_keys = [f"{weight}_weight" for weight in weights]
+
+    output_template = "N_gamma_alpha_{}.hdf5"
+    output_filename = output_template.format("-".join(weights))
 
     shear_constant_step_pair = (
         "g1_slice=0.02__g2_slice=0.00__g1_other=0.00__g2_other=0.00__zlow=0.0__zhigh=6.0",
@@ -332,7 +356,8 @@ def main():
         ),
     ]
 
-    weight_keys = ["statistical_weight"]
+    print(f"Processing with weights: {weights}")
+    
 
     results = {}
     futures = {}
@@ -342,7 +367,8 @@ def main():
             process_pair,
             *shear_constant_step_pair,
             weight_keys,
-            **kwargs,
+            seed=seed,
+            resample=resample,
         )
         # we let alpha=-1 represent the constant shear simulation
         futures[-1] = _future
@@ -353,7 +379,8 @@ def main():
                 process_pair,
                 *shear_step_pair,
                 weight_keys,
-                **kwargs,
+                seed=seed,
+                resample=resample,
             )
             futures[alpha] = _future
 
@@ -373,7 +400,7 @@ def main():
         mean_value = np.mean(results[mean_alpha][mean_tomo])
         mean[i] = mean_value
 
-    if kwargs["resample"] == "jackknife":
+    if resample == "jackknife":
         print("jackknifing covariance")
         n_jackknife = None
         for i in range(cov_params.shape[0]):
@@ -392,7 +419,7 @@ def main():
                 )
                 cov[i, j] = cov_value
 
-    elif kwargs["resample"] == "bootstrap":
+    elif resample == "bootstrap":
         print("bootstrapping covariance")
         n_bootstrap = None
         for i in range(cov_params.shape[0]):
@@ -411,7 +438,7 @@ def main():
                 )
                 cov[i, j] = cov_value
 
-    with h5py.File("N_gamma_alpha.hdf5", "w") as hf:
+    with h5py.File(output_filename, "w") as hf:
         shear_group = hf.create_group("shear")
         shear_group.create_dataset("mean_params", data=mean_params)
         shear_group.create_dataset("mean", data=mean)
@@ -425,58 +452,15 @@ def main():
 
     # ---
 
-    # zbinsc = lib.const.ZVALS
-
-    # with (
-    #     h5py.File(lib.const.SIM_REDSHIFT_CATALOGS[shear_constant_step_pair[0]]) as hf_redshift_plus,
-    #     h5py.File(lib.const.SIM_REDSHIFT_CATALOGS[shear_constant_step_pair[1]]) as hf_redshift_minus,
-    # ):
-    #     # _zbinsc_plus = hf_redshift_plus["sompz"]["pzdata_weighted_sompz_dz005"]["zbinsc"][:]
-    #     # _zbinsc_minus = hf_redshift_minus["sompz"]["pzdata_weighted_sompz_dz005"]["zbinsc"][:]
-
-    #     # np.testing.assert_array_equal(_zbinsc_plus, _zbinsc_minus)
-    #     # zbinsc = _zbinsc_plus
-
-    #     nz_sompz = {}
-    #     nz_true = {}
-    #     for tomographic_bin in lib.const.TOMOGRAPHIC_BINS:
-    #         _nz_sompz_plus = hf_redshift_plus["sompz"]["pzdata_weighted_sompz_dz005"][f"bin{tomographic_bin}"][:]
-    #         _nz_sompz_minus = hf_redshift_minus["sompz"]["pzdata_weighted_sompz_dz005"][f"bin{tomographic_bin}"][:]
-    #         _nz_sompz = (_nz_sompz_plus + _nz_sompz_minus) / 2
-    #         nz_sompz[f"bin{tomographic_bin}"] = _nz_sompz
-
-    #         _nz_true_plus = hf_redshift_plus["sompz"]["pzdata_weighted_true_dz005"][f"bin{tomographic_bin}"][:]
-    #         _nz_true_minus = hf_redshift_minus["sompz"]["pzdata_weighted_true_dz005"][f"bin{tomographic_bin}"][:]
-    #         _nz_true = (_nz_true_plus + _nz_true_minus) / 2
-    #         nz_true[f"bin{tomographic_bin}"] = _nz_true
-
     nz, zedges, zbinsc = compute_nz(shear_constant_step_pair[0], shear_constant_step_pair[1], weight_keys, zedges=ZEDGES, zbinsc=ZBINSC)
 
-    # ---
-
-    with h5py.File("N_gamma_alpha.hdf5", "r+") as hf:
-
+    with h5py.File(output_filename, "r+") as hf:
         redshift_group = hf.create_group("redshift")
-        # redshift_group.create_dataset("zbinsc", data=zbinsc)
-
-        # sompz_redshift_group = redshift_group.create_group("sompz")
-        # true_redshift_group = redshift_group.create_group("true")
-
-
-        # sompz_redshift_group.create_dataset("zbinsc", data=zbinsc)
-        # true_redshift_group.create_dataset("zbinsc", data=zbinsc)
-
         redshift_group.create_dataset("zedges", data=zedges)
         redshift_group.create_dataset("zbinsc", data=zbinsc)
 
-
         for tomographic_bin in lib.const.TOMOGRAPHIC_BINS:
             groupname = f"bin{tomographic_bin}"
-            # redshift_group.create_dataset(groupname, data=nz_sompz[groupname])
-
-            # sompz_redshift_group.create_dataset(groupname, data=nz_sompz[groupname])
-            # true_redshift_group.create_dataset(groupname, data=nz_true[groupname])
-
             redshift_group.create_dataset(groupname, data=nz[tomographic_bin])
 
 
