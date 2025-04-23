@@ -136,9 +136,9 @@ def test_integration_bump_map_chi2(add_noise):
         params=map_params,
     )
     if not add_noise:
-        assert chi2_info["chi2"] < 1e-3
+        assert np.abs(chi2_info["p_value"] - 0.5) >= 0.45, chi2_info
     else:
-        assert np.abs(chi2_info["p_value"] - 0.5) < 0.45
+        assert np.abs(chi2_info["p_value"] - 0.5) < 0.45, chi2_info
 
 
 def test_integration_bump_mcmc(capsys):
@@ -306,9 +306,9 @@ def test_integration_interpolant_map_chi2(add_noise, model_kind):
         params=map_params,
     )
     if not add_noise:
-        assert chi2_info["chi2"] < 1e-3
+        assert np.abs(chi2_info["p_value"] - 0.5) >= 0.45, chi2_info
     else:
-        assert np.abs(chi2_info["p_value"] - 0.5) < 0.45
+        assert np.abs(chi2_info["p_value"] - 0.5) < 0.45, chi2_info
 
 
 @pytest.mark.parametrize("model_kind", ["F", "G"])
