@@ -184,9 +184,7 @@ def model(
             # we use V = 1
             params[f"g_b{i}"] = numpyro.sample(f"g_b{i}", dist.SoftLaplace(0.0, 1 * 2.0 / jnp.pi))
         for j in range(pts.shape[1]):
-            params[f"a{j}_b{i}"] = numpyro.sample(
-                f"a{j}_b{i}", dist.Uniform(-10.0, 10.0)
-            )
+            params[f"a{j}_b{i}"] = numpyro.sample(f"a{j}_b{i}", dist.Uniform(-10, 10))
 
     for k, v in fixed_param_values.items():
         params[k] = numpyro.deterministic(k, v)
