@@ -176,7 +176,7 @@ def model(
 
     params = {}
     if "w" not in fixed_param_values:
-        params["w"] = numpyro.sample("w", dist.Uniform(0.025, 0.25))
+        params["w"] = numpyro.sample("w", dist.LogNormal(np.log(0.1), 0.1))
     for i in range(4):
         if f"g_b{i}" not in fixed_param_values:
             params[f"g_b{i}"] = numpyro.sample(f"g_b{i}", dist.HalfNormal(1.0))
