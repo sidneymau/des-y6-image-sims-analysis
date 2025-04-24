@@ -219,18 +219,21 @@ def compute_shear_pair(dp, dm):
     g1m_m = np.nansum(dm["1m"]["g1"] * dm["1m"]["n"]) / np.nansum(dm["1m"]["n"])
     R11_m = (g1p_m - g1m_m) / 0.02
 
-    # g2_p = np.nansum(dp["noshear"]["g2"] * dp["noshear"]["n"]) / np.nansum(dp["noshear"]["n"])
-    # g2p_p = np.nansum(dp["2p"]["g2"] * dp["2p"]["n"]) / np.nansum(dp["2p"]["n"])
-    # g2m_p = np.nansum(dp["2m"]["g2"] * dp["2m"]["n"]) / np.nansum(dp["2m"]["n"])
-    # R22_p = (g2p_p - g2m_p) / 0.02
+    g2_p = np.nansum(dp["noshear"]["g2"] * dp["noshear"]["n"]) / np.nansum(dp["noshear"]["n"])
+    g2p_p = np.nansum(dp["2p"]["g2"] * dp["2p"]["n"]) / np.nansum(dp["2p"]["n"])
+    g2m_p = np.nansum(dp["2m"]["g2"] * dp["2m"]["n"]) / np.nansum(dp["2m"]["n"])
+    R22_p = (g2p_p - g2m_p) / 0.02
 
-    # g2_m = np.nansum(dm["noshear"]["g2"] * dm["noshear"]["n"]) / np.nansum(dm["noshear"]["n"])
-    # g2p_m = np.nansum(dm["2p"]["g2"] * dm["2p"]["n"]) / np.nansum(dm["2p"]["n"])
-    # g2m_m = np.nansum(dm["2m"]["g2"] * dm["2m"]["n"]) / np.nansum(dm["2m"]["n"])
-    # R22_m = (g2p_m - g2m_m) / 0.02
+    g2_m = np.nansum(dm["noshear"]["g2"] * dm["noshear"]["n"]) / np.nansum(dm["noshear"]["n"])
+    g2p_m = np.nansum(dm["2p"]["g2"] * dm["2p"]["n"]) / np.nansum(dm["2p"]["n"])
+    g2m_m = np.nansum(dm["2m"]["g2"] * dm["2m"]["n"]) / np.nansum(dm["2m"]["n"])
+    R22_m = (g2p_m - g2m_m) / 0.02
+
+    R_p = 0.5 * (R11_p + R22_p)
+    R_m = 0.5 * (R11_m + R22_m)
 
     return (
-        (g1_p / R11_p - g1_m / R11_m), # dg_obs
+        (g1_p / R_p - g1_m / R_m), # dg_obs
         2 * 0.02,      # dg_true
     )
 
@@ -305,7 +308,7 @@ def main():
 
     weight_keys = [f"{weight}_weight" for weight in weights]
 
-    output_template = "N_gamma_alpha_{}.hdf5"
+    output_template = "N_gamma_alpha_v3_{}.hdf5"
     output_filename = output_template.format("-".join(weights))
 
     shear_constant_step_pair = (
