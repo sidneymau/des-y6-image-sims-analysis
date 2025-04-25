@@ -417,7 +417,7 @@ def plot_results_symlog_nz(*, model_module, model_data, samples=None, map_params
         axdiff.axhline(0.0, color="black", linestyle="dotted")
         axdiff.format(
             ylim=(-3, 3),
-            ylabel=r"(model - data)/error" if bi % 2 == 0 else None,
+            ylabel=r"(data - model)/error" if bi % 2 == 0 else None,
             yticklabels=[] if bi % 2 == 1 else None,
         )
 
@@ -564,10 +564,10 @@ def plot_results_delta_nz(*, model_module, model_data, samples=None, map_params=
         ax = axs[bi_row, bi_col]
 
         ax.axhline(0.0, color="black", linestyle="dotted")
-        ax.set_yscale("symlog", linthresh=0.02)
+        # ax.set_yscale("symlog", linthresh=0.02)
         ax.format(
             xlim=(0, 4.19),
-            ylim=(-0.29, 0.39),
+            ylim=(-0.25, 0.2),
             title=f"bin {bi}",
             titleloc="ur",
             xlabel="redshift",
@@ -635,7 +635,7 @@ def plot_results_fg_model(*, model_module, model_data, map_params=None, samples=
         model_parts_mn = model_module.model_parts_smooth(
             params=map_params,
             z=model_data["z"],
-            nz=None,
+            nz=model_data["nz"],
             mn_pars=None,
             zbins=None,
             mn=None,
@@ -653,7 +653,7 @@ def plot_results_fg_model(*, model_module, model_data, map_params=None, samples=
             si_model_parts = model_module.model_parts_smooth(
                 params=si_params,
                 z=model_data["z"],
-                nz=None,
+                nz=model_data["nz"],
                 mn_pars=None,
                 zbins=None,
                 mn=None,
@@ -734,7 +734,7 @@ def plot_results_fg_model(*, model_module, model_data, map_params=None, samples=
                     color=colors[bi],
                 )
 
-        ax.legend(loc="ll", frameon=False, ncols=1)
+        ax.legend(loc="ur", frameon=False, ncols=1)
         ax.format(
             xlim=(0, 4.19),
             xlabel="redshift",
@@ -867,6 +867,7 @@ def compute_eff_nz_from_data(
     clip_zero=False,
     shift_negative=False,
     progress_bar=False,
+    input_nz_mean_only=False,
 ):
     """Compute the effective nz for a given set of input n(z) values and MCMC samples
     for the model parameters.
@@ -892,6 +893,9 @@ def compute_eff_nz_from_data(
         Default is False.
     progress_bar : bool, optional
         If True, show a progress bar for the computation. Default is False.
+    input_nz_mean_only : bool, optional
+        If True, only apply the simulation model to the mean of the input n(z) values.
+        Default is False.
 
     Returns
     -------
@@ -905,6 +909,14 @@ def compute_eff_nz_from_data(
         The final n(z) values for each input n(z) and model parameter sample. Shape is
         (# of input nzs, # of tomo bins, nz dimension).
     """
+    if input_nz_mean_only:
+        ns = input_nz.shape[0]
+        mn_input_nz = np.mean(input_nz, axis=0, keepdims=True)
+        input_nz = np.tile(mn_input_nz, (ns, 1, 1))
+        assert np.allclose(
+            input_nz, mn_input_nz
+        ), "input_nz_mean_only is not working as expected!"
+
     if progress_bar:
         import tqdm
 
