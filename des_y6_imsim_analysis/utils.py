@@ -402,7 +402,7 @@ def plot_results_symlog_nz(*, model_module, model_data, samples=None, map_params
         # plot the stuff
         axhist.axhline(0.0, color="black", linestyle="dotted")
         axhist.grid(False)
-        axhist.set_yscale("symlog", linthresh=0.02)
+        axhist.set_yscale("symlog", linthresh=1e-3)
         axhist.format(
             xlim=(0, 4.19),
             ylim=(-0.02, 10.0),
@@ -564,10 +564,10 @@ def plot_results_delta_nz(*, model_module, model_data, samples=None, map_params=
         ax = axs[bi_row, bi_col]
 
         ax.axhline(0.0, color="black", linestyle="dotted")
-        # ax.set_yscale("symlog", linthresh=0.02)
+        ax.set_yscale("symlog", linthresh=1e-3)
         ax.format(
             xlim=(0, 4.19),
-            ylim=(-0.25, 0.2),
+            # ylim=(-0.25, 0.2),
             title=f"bin {bi}",
             titleloc="ur",
             xlabel="redshift",
