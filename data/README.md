@@ -11,3 +11,4 @@
     - statistical-neighbor-occupancy: weights are product of statistical shear weight, neighbor weight, and occupancy ratio weight
     - statistical-nz: weights are product of statistical shear weight and nz-match weight
     - statistical-neighbor-nz: weights are product of statistical shear weight, neighbor weight, and nz-match weight
+- v3: same as v2 but using averaged diagonal of response
