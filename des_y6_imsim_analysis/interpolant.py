@@ -27,9 +27,9 @@ def model_parts_smooth(
     n_pts,
     model_kind,
     z,
+    zbins,
     nz=None,
     mn_pars=None,
-    zbins=None,
     mn=None,
     cov=None,
     extra_kwargs=None,
@@ -41,7 +41,7 @@ def model_parts_smooth(
     for i in range(4):
         model_parts[i] = {}
 
-        xp = make_interpolant_pts(n_pts)
+        xp = make_interpolant_pts(n_pts, zbins)
 
         if model_kind == "g":
             min_lin = -0.1
@@ -76,16 +76,10 @@ def model_parts_smooth(
 
         if model_kind == "f":
             model_parts[i]["F"] = fgvals
-
-            # 0 to 1
-            g = params.get(f"g_b{i}", 0.0)
-            model_parts[i]["G"] = g * gtemp
+            model_parts[i]["G"] = jnp.zeros_like(fgvals)
         else:
             model_parts[i]["G"] = fgvals
-
-            # -0.1 to 0.1
-            g = params.get(f"m_b{i}", 0.0) * 0.2
-            model_parts[i]["F"] = jnp.zeros_like(fgvals) + g
+            model_parts[i]["F"] = jnp.zeros_like(fgvals)
 
     return model_parts
 
@@ -211,13 +205,6 @@ def model(
 
     params = {}
     for i in range(4):
-        if model_kind == "f":
-            if f"g_b{i}" not in fixed_param_values:
-                params[f"g_b{i}"] = numpyro.sample(f"g_b{i}", dist.Uniform(0, 1))
-        else:
-            if f"m_b{i}" not in fixed_param_values:
-                params[f"m_b{i}"] = numpyro.sample(f"m_b{i}", dist.Uniform(-0.5, 0.5))
-
         for j in range(n_pts):
             params[f"a{j}_b{i}"] = numpyro.sample(f"a{j}_b{i}", dist.Uniform(0, 1))
 
@@ -238,13 +225,17 @@ def model(
     )
 
 
-def make_interpolant_pts(n_pts):
+def make_interpolant_pts(n_pts, zbins):
     """Make the array of linear interpolation points.
 
     Parameters
     ----------
     n_pts : int
         The number of points to use.
+    zbins : array, shape (n_alpha+1, 2)
+        Array of redshift ranges for each sheared slice. Always starts
+        with full range (e.g., `[[0, 6], [0, 1], [1, 6]]` is two slices
+        from 0 to 1 and 1 to 6).
 
     Returns
     -------
@@ -253,8 +244,8 @@ def make_interpolant_pts(n_pts):
     """
     return jnp.concatenate(
         [
-            (jnp.arange(n_pts - 1) + 0.5) * 2.7 / (n_pts - 1),
-            jnp.array([2.7])
+            (jnp.arange(n_pts - 1) + 0.5) * zbins[-1][0] / (n_pts - 1),
+            jnp.array([zbins[-1][0]])
         ],
         axis=0,
         dtype=jnp.float64,

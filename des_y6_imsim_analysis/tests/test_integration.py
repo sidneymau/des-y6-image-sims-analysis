@@ -16,7 +16,7 @@ from des_y6_imsim_analysis.utils import (
 )
 
 
-def _make_fake_bump_data(*, num_pts, w, seed, add_noise=False):
+def _make_fake_bump_data(*, num_pts, w, seed, model_kind, add_noise=False):
     """Make fake data with an F(z) model."""
 
     rng = np.random.default_rng(seed)
@@ -26,7 +26,7 @@ def _make_fake_bump_data(*, num_pts, w, seed, add_noise=False):
     for i in range(4):
         true_params[f"g_b{i}"] = 0.0
         for j in range(num_pts):
-            true_params[f"a{j}_b{i}"] = rng.uniform(-0.05, 0.05)
+            true_params[f"a{j}_b{i}"] = rng.uniform(0, 1)
 
     z = np.asarray(GMODEL_COSMOS_Z.copy()[1:-1], dtype=np.float64)
 
@@ -59,6 +59,7 @@ def _make_fake_bump_data(*, num_pts, w, seed, add_noise=False):
         mn_pars=mn_pars,
         zbins=zbins,
         params=true_params,
+        model_kind=model_kind,
     )
     cov = np.diagflat((mn * 0.01) ** 2)
     if add_noise:
@@ -75,6 +76,7 @@ def _make_fake_bump_data(*, num_pts, w, seed, add_noise=False):
             k: v for k, v in true_params.items() if k == "w" or k.startswith("g_b")
         },
         num_pts=num_pts,
+        model_kind=model_kind,
     )
 
     data = ModelData(
@@ -93,8 +95,9 @@ def _make_fake_bump_data(*, num_pts, w, seed, add_noise=False):
     }
 
 
-def test_integration_bump_map():
-    fake_data = _make_fake_bump_data(num_pts=9, w=0.1, seed=42)
+@pytest.mark.parametrize("model_kind", ["f", "g"])
+def test_integration_bump_map(model_kind):
+    fake_data = _make_fake_bump_data(num_pts=9, w=0.1, seed=42, model_kind=model_kind)
 
     model_data = fake_data["model_data"]
     true_params = fake_data["true_params"]
@@ -113,12 +116,14 @@ def test_integration_bump_map():
             true_params[k],
             rtol=0,
             atol=5e-5,
+            err_msg=k,
         )
 
 
+@pytest.mark.parametrize("model_kind", ["f", "g"])
 @pytest.mark.parametrize("add_noise", [True, False])
-def test_integration_bump_map_chi2(add_noise):
-    fake_data = _make_fake_bump_data(num_pts=9, w=0.1, seed=42, add_noise=add_noise)
+def test_integration_bump_map_chi2(add_noise, model_kind):
+    fake_data = _make_fake_bump_data(num_pts=9, w=0.1, seed=42, add_noise=add_noise, model_kind=model_kind)
 
     model_data = fake_data["model_data"]
     data = fake_data["data"]
@@ -146,9 +151,10 @@ def test_integration_bump_map_chi2(add_noise):
         assert np.abs(chi2_info["p_value"] - 0.5) < 0.45, chi2_info
 
 
-def test_integration_bump_mcmc(capsys):
+@pytest.mark.parametrize("model_kind", ["f", "g"])
+def test_integration_bump_mcmc(capsys, model_kind):
     with capsys.disabled():
-        fake_data = _make_fake_bump_data(num_pts=9, w=0.1, seed=42)
+        fake_data = _make_fake_bump_data(num_pts=9, w=0.1, seed=42, model_kind=model_kind)
 
         model_data = fake_data["model_data"]
         true_params = fake_data["true_params"]
@@ -186,6 +192,7 @@ def test_integration_bump_mcmc(capsys):
             true_params[k],
             rtol=0,
             atol=5e-3,
+            err_msg=k,
         )
 
 
@@ -196,7 +203,7 @@ def _make_fake_interpolant_data(*, num_pts, model_kind, seed, add_noise=False):
     true_params = {}
     for i in range(4):
         for j in range(num_pts):
-            true_params[f"a{j}_b{i}"] = rng.uniform(-0.05, 0.05)
+            true_params[f"a{j}_b{i}"] = rng.uniform(0, 1)
 
     z = np.asarray(GMODEL_COSMOS_Z.copy()[1:-1], dtype=np.float64)
 
@@ -213,8 +220,6 @@ def _make_fake_interpolant_data(*, num_pts, model_kind, seed, add_noise=False):
         dtype=np.float64,
     )
 
-    pts = interpolant.make_interpolant_pts(num_pts=num_pts, zbins=zbins)
-
     mn_pars = []
     for sind in range(-1, 10):
         for bind in range(4):
@@ -222,7 +227,6 @@ def _make_fake_interpolant_data(*, num_pts, model_kind, seed, add_noise=False):
     mn_pars = np.array(mn_pars, dtype=np.int32)
 
     mn = interpolant.model_mean(
-        pts=pts,
         n_pts=num_pts,
         z=z,
         nz=nzs,
@@ -263,7 +267,7 @@ def _make_fake_interpolant_data(*, num_pts, model_kind, seed, add_noise=False):
     }
 
 
-@pytest.mark.parametrize("model_kind", ["F", "G"])
+@pytest.mark.parametrize("model_kind", ["f", "g"])
 def test_integration_interpolant_map(model_kind):
     fake_data = _make_fake_interpolant_data(num_pts=9, model_kind=model_kind, seed=42)
 
@@ -287,7 +291,7 @@ def test_integration_interpolant_map(model_kind):
         )
 
 
-@pytest.mark.parametrize("model_kind", ["F", "G"])
+@pytest.mark.parametrize("model_kind", ["f", "g"])
 @pytest.mark.parametrize("add_noise", [True, False])
 def test_integration_interpolant_map_chi2(add_noise, model_kind):
     fake_data = _make_fake_interpolant_data(
@@ -319,7 +323,7 @@ def test_integration_interpolant_map_chi2(add_noise, model_kind):
         assert np.abs(chi2_info["p_value"] - 0.5) < 0.45, chi2_info
 
 
-@pytest.mark.parametrize("model_kind", ["F", "G"])
+@pytest.mark.parametrize("model_kind", ["f", "g"])
 def test_integration_interpolant_mcmc(capsys, model_kind):
     with capsys.disabled():
         fake_data = _make_fake_interpolant_data(

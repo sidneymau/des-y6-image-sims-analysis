@@ -15,7 +15,6 @@ import numpyro.distributions as dist  # noqa: E402
 from jax.nn import sigmoid  # noqa: E402
 
 from des_y6_imsim_analysis.utils import (  # noqa: E402
-    GMODEL_COSMOS_NZ,
     sompz_integral,
 )
 
@@ -26,11 +25,12 @@ def _bump(z, a, b, w):
     return sigmoid((z - a) / w) * (1 - sigmoid((z - b) / w))
 
 
-@functools.partial(jax.jit, static_argnames=("extra_kwargs", "n_pts"))
+@functools.partial(jax.jit, static_argnames=("extra_kwargs", "n_pts", "model_kind"))
 def model_parts_smooth(
     *,
     params,
     n_pts,
+    model_kind,
     pts,
     z,
     nz=None,
@@ -40,30 +40,34 @@ def model_parts_smooth(
     cov=None,
     extra_kwargs=None,
 ):
-    gtemp = GMODEL_COSMOS_NZ[: z.shape[0]]
-    gtemp = gtemp / gtemp.sum()
-
     model_parts = {}
     for i in range(4):
         model_parts[i] = {}
-        fvals = jnp.zeros_like(z)
+
+        min_fg = -1.0
+        max_fg = 10.0
+
+        fgvals = jnp.zeros_like(z)
         for j in range(n_pts):
-            fvals += params[f"a{j}_b{i}"] * _bump(
+            fgvals += (params[f"a{j}_b{i}"] * (max_fg - min_fg) + min_fg) * _bump(
                 z, pts[i, j, 0], pts[i, j, 1], params["w"]
             )
-        model_parts[i]["F"] = fvals
-
-        g = params.get(f"g_b{i}", 0.0)
-        model_parts[i]["G"] = g * gtemp
+        if model_kind == "f":
+            model_parts[i]["F"] = fgvals
+            model_parts[i]["G"] = jnp.zeros_like(fgvals)
+        else:
+            model_parts[i]["G"] = fgvals
+            model_parts[i]["F"] = jnp.zeros_like(fgvals)
 
     return model_parts
 
 
-@functools.partial(jax.jit, static_argnames=("extra_kwargs", "n_pts"))
+@functools.partial(jax.jit, static_argnames=("extra_kwargs", "n_pts", "model_kind"))
 def model_mean_smooth(
     *,
     pts,
     n_pts,
+    model_kind,
     z,
     nz,
     mn_pars,
@@ -76,6 +80,7 @@ def model_mean_smooth(
     model_parts = model_parts_smooth(
         pts=pts,
         n_pts=n_pts,
+        model_kind=model_kind,
         z=z,
         nz=nz,
         mn_pars=mn_pars,
@@ -90,11 +95,12 @@ def model_mean_smooth(
     return jnp.stack(ngammas)
 
 
-@functools.partial(jax.jit, static_argnames=("extra_kwargs", "n_pts"))
+@functools.partial(jax.jit, static_argnames=("extra_kwargs", "n_pts", "model_kind"))
 def model_mean(
     *,
     pts,
     n_pts,
+    model_kind,
     z,
     nz,
     mn_pars,
@@ -108,6 +114,7 @@ def model_mean(
     ngammas = model_mean_smooth(
         pts=pts,
         n_pts=n_pts,
+        model_kind=model_kind,
         z=z,
         nz=nz,
         mn_pars=mn_pars,
@@ -126,11 +133,12 @@ def model_mean(
     return model
 
 
-@functools.partial(jax.jit, static_argnames=("extra_kwargs", "n_pts"))
+@functools.partial(jax.jit, static_argnames=("extra_kwargs", "n_pts", "model_kind"))
 def model_mean_smooth_tomobin(
     *,
     pts,
     n_pts,
+    model_kind,
     z,
     nz,
     mn_pars,
@@ -145,6 +153,7 @@ def model_mean_smooth_tomobin(
     model_mn = model_mean_smooth(
         pts=pts,
         n_pts=n_pts,
+        model_kind=model_kind,
         z=z,
         nz=nz,
         mn_pars=mn_pars,
@@ -157,6 +166,7 @@ def model_mean_smooth_tomobin(
 def model(
     pts=None,
     n_pts=None,
+    model_kind=None,
     z=None,
     nz=None,
     mn=None,
@@ -168,6 +178,7 @@ def model(
 ):
     assert pts is not None
     assert n_pts is not None
+    assert model_kind is not None
     assert nz is not None
     assert mn is not None
     assert cov is not None
@@ -182,15 +193,8 @@ def model(
     if "w" not in fixed_param_values:
         params["w"] = numpyro.sample("w", dist.LogNormal(np.log(0.1), 0.1))
     for i in range(4):
-        if f"g_b{i}" not in fixed_param_values:
-            # std of softlaplace is pi/2 * scale, so to set std to a value V, we need
-            # to set the scale to V * 2/pi
-            # we use V = 1
-            params[f"g_b{i}"] = numpyro.sample(
-                f"g_b{i}", dist.SoftLaplace(0.0, 1 * 2.0 / jnp.pi)
-            )
         for j in range(pts.shape[1]):
-            params[f"a{j}_b{i}"] = numpyro.sample(f"a{j}_b{i}", dist.Uniform(-10, 10))
+            params[f"a{j}_b{i}"] = numpyro.sample(f"a{j}_b{i}", dist.Uniform(0, 1))
 
     for k, v in fixed_param_values.items():
         params[k] = numpyro.deterministic(k, v)
@@ -198,6 +202,7 @@ def model(
     model_mn = model_mean(
         pts=pts,
         n_pts=n_pts,
+        model_kind=model_kind,
         z=z,
         nz=nz,
         mn_pars=mn_pars,
@@ -235,12 +240,12 @@ def make_bump_pts(*, num_pts, zbins):
     else:
         pts = []
         for bi in range(4):
-            zmid = np.linspace(0.0, 2.7, num_pts)[1:-1]
+            zmid = np.linspace(0.0, zbins[-1][0], num_pts)[1:-1]
             be = np.concatenate(
                 [
                     [0.0],
                     zmid,
-                    [2.7],
+                    [zbins[-1][0]],
                     [6.01],
                 ]
             )
@@ -261,7 +266,7 @@ def make_bump_pts(*, num_pts, zbins):
 
 
 def make_model_data(
-    *, z, nzs, mn, cov, mn_pars, zbins, fixed_param_values=None, num_pts=-1
+    *, z, nzs, mn, cov, mn_pars, zbins, fixed_param_values=None, num_pts=-1, model_kind="F",
 ):
     """Create the dict of model data.
 
@@ -285,16 +290,24 @@ def make_model_data(
     num_pts : int, optional
         The number of bins to use. If not positive, then the bins are set to the sheared
         ranges from the image sims. Otherwise, they are set to uniformly cover the range
-        of 0 to 2.7 for num_bins-1 and then a single bin from 2.7 to 6.01. The default is -1.
+        of 0 to zbins[-1][0] for num_bins-1 and then a single bin from zbins[-1][0] to 6.01.
+        The default is -1.
+    model_kind : str, optional
+        The model kind. Default is "F" meaning n_eff = (1+F) * n. If "G", then
+        n_eff = n + G.
 
     Returns
     -------
     data : dict
         The model data. Pass to the functions using `**data`.
     """
+    model_kind = model_kind.lower()
+    pts = make_bump_pts(num_pts=num_pts, zbins=zbins)
+
     return dict(
         pts=make_bump_pts(num_pts=num_pts, zbins=zbins),
-        n_pts=num_pts,
+        n_pts=pts.shape[1],
+        model_kind=model_kind,
         z=z,
         nz=nzs,
         mn=mn,
@@ -302,5 +315,5 @@ def make_model_data(
         mn_pars=np.asarray(mn_pars, dtype=np.int32),
         zbins=np.asarray(zbins),
         fixed_param_values=fixed_param_values,
-        extra_kwargs=("pts", "n_pts"),
+        extra_kwargs=("pts", "n_pts", "model_kind"),
     )
