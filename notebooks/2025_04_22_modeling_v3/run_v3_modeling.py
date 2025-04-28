@@ -33,22 +33,10 @@ models = [
     {
         "num_pts": 10,
         "model_kind": "g",
-        "fixed_param_values": {
-            "m_b0": 0.0,
-            "m_b1": 0.0,
-            "m_b2": 0.0,
-            "m_b3": 0.0,
-        },
     },
     {
         "num_pts": 9,
         "model_kind": "f",
-        "fixed_param_values": {
-            "g_b0": 0.0,
-            "g_b1": 0.0,
-            "g_b2": 0.0,
-            "g_b3": 0.0,
-        },
     },
 ]
 fnames = [
