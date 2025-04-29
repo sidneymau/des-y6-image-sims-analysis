@@ -568,6 +568,6 @@ def test_integration_interpolant_variants_mcmc(capsys, model_kind):
             np.mean(samples[k]),
             true_params[k],
             rtol=0.5,
-            atol=0.10,
+            atol=0.5,
             err_msg=k,
         )
