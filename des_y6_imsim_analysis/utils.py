@@ -323,7 +323,9 @@ def lin_interp_integral_nojit(y, x, low, high):
 lin_interp_integral = jax.jit(lin_interp_integral_nojit)
 
 
-def plot_results_nz(*, model_module, model_data, samples=None, map_params=None, symlog=True):
+def plot_results_nz(
+    *, model_module, model_data, samples=None, map_params=None, symlog=True
+):
     mn_pars = tuple(tuple(mnp.tolist()) for mnp in model_data["mn_pars"])
     z = model_data["z"]
     nzs = model_data["nz"]
@@ -506,7 +508,9 @@ def plot_results_nz(*, model_module, model_data, samples=None, map_params=None, 
     return fig
 
 
-def plot_results_delta_nz(*, model_module, model_data, samples=None, map_params=None, symlog=True):
+def plot_results_delta_nz(
+    *, model_module, model_data, samples=None, map_params=None, symlog=True
+):
     mn_pars = tuple(tuple(mnp.tolist()) for mnp in model_data["mn_pars"])
     z = model_data["z"]
     nzs = model_data["nz"]
@@ -913,9 +917,9 @@ def compute_eff_nz_from_data(
         ns = input_nz.shape[0]
         mn_input_nz = np.mean(input_nz, axis=0, keepdims=True)
         input_nz = np.tile(mn_input_nz, (ns, 1, 1))
-        assert np.allclose(
-            input_nz, mn_input_nz
-        ), "input_nz_mean_only is not working as expected!"
+        assert np.allclose(input_nz, mn_input_nz), (
+            "input_nz_mean_only is not working as expected!"
+        )
 
     if progress_bar:
         import tqdm
@@ -1036,21 +1040,17 @@ def rebin_data(data, new_bin_ranges):
     # assert np.allclose(np.sum(wgts, axis=1), 1.0)
 
     new_zbins = np.array(
-        [
-            [data.zbins[0][0], data.zbins[0][1]]
-        ] + [
-            [data.zbins[br[0] + 1][0], data.zbins[br[1]][1]]
-            for br in new_bin_ranges
-        ]
+        [[data.zbins[0][0], data.zbins[0][1]]]
+        + [[data.zbins[br[0] + 1][0], data.zbins[br[1]][1]] for br in new_bin_ranges]
     )
 
     new_mn_pars = [(-1, i) for i in range(4)]
     for bi in range(len(new_bin_ranges)):
-        new_mn_pars += [
-            (bi, i) for i in range(nzs.shape[0])
-        ]
+        new_mn_pars += [(bi, i) for i in range(nzs.shape[0])]
 
-    proj_mat = np.zeros((data.mn.shape[0], nzs.shape[0] + nzs.shape[0] * len(new_bin_ranges)))
+    proj_mat = np.zeros(
+        (data.mn.shape[0], nzs.shape[0] + nzs.shape[0] * len(new_bin_ranges))
+    )
     for i in range(4):
         proj_mat[i, i] = 1.0
 
@@ -1075,5 +1075,5 @@ def rebin_data(data, new_bin_ranges):
         mn_pars=new_mn_pars,
         zbins=new_zbins,
         mn=new_mn,
-        cov=new_cov
+        cov=new_cov,
     )

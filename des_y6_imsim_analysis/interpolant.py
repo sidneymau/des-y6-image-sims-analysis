@@ -57,7 +57,8 @@ def model_parts_smooth(
                 + [
                     (params[f"a{j}_b{i}"]) * (max_lin - min_lin) + min_lin
                     for j in range(n_pts)
-                ] + [0.0],
+                ]
+                + [0.0],
                 dtype=jnp.float64,
             )
             fgvals = jnp.interp(z, xp, yp, left=0.0, right=0.0)
@@ -245,7 +246,7 @@ def make_interpolant_pts(n_pts, zbins):
     return jnp.concatenate(
         [
             (jnp.arange(n_pts - 1) + 0.5) * zbins[-1][0] / (n_pts - 1),
-            jnp.array([zbins[-1][0]])
+            jnp.array([zbins[-1][0]]),
         ],
         axis=0,
         dtype=jnp.float64,

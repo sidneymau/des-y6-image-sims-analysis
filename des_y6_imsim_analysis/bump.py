@@ -266,7 +266,16 @@ def make_bump_pts(*, num_pts, zbins):
 
 
 def make_model_data(
-    *, z, nzs, mn, cov, mn_pars, zbins, fixed_param_values=None, num_pts=-1, model_kind="F",
+    *,
+    z,
+    nzs,
+    mn,
+    cov,
+    mn_pars,
+    zbins,
+    fixed_param_values=None,
+    num_pts=-1,
+    model_kind="F",
 ):
     """Create the dict of model data.
 

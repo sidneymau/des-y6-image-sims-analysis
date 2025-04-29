@@ -123,7 +123,9 @@ def test_integration_bump_map(model_kind):
 @pytest.mark.parametrize("model_kind", ["f", "g"])
 @pytest.mark.parametrize("add_noise", [True, False])
 def test_integration_bump_map_chi2(add_noise, model_kind):
-    fake_data = _make_fake_bump_data(num_pts=9, w=0.1, seed=42, add_noise=add_noise, model_kind=model_kind)
+    fake_data = _make_fake_bump_data(
+        num_pts=9, w=0.1, seed=42, add_noise=add_noise, model_kind=model_kind
+    )
 
     model_data = fake_data["model_data"]
     data = fake_data["data"]
@@ -154,7 +156,9 @@ def test_integration_bump_map_chi2(add_noise, model_kind):
 @pytest.mark.parametrize("model_kind", ["f", "g"])
 def test_integration_bump_mcmc(capsys, model_kind):
     with capsys.disabled():
-        fake_data = _make_fake_bump_data(num_pts=9, w=0.1, seed=42, model_kind=model_kind)
+        fake_data = _make_fake_bump_data(
+            num_pts=9, w=0.1, seed=42, model_kind=model_kind
+        )
 
         model_data = fake_data["model_data"]
         true_params = fake_data["true_params"]

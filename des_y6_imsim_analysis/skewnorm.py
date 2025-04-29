@@ -60,7 +60,7 @@ def model_parts_smooth(
         amp = (params[f"n_b{i}"] + 0.5) * 1
 
         # prior is [0, 1]
-        scale = (params[f"s_b{i}"] + 0.5)
+        scale = params[f"s_b{i}"] + 0.5
 
         # prior is [-10, 10]
         max_a = -1
@@ -68,7 +68,9 @@ def model_parts_smooth(
         alpha = (params[f"a_b{i}"] + 0.5) * (max_a - min_a) + min_a
 
         skn = _skew_normal(z, loc, scale, alpha)
-        gvals = amp * _skew_normal(z, loc, scale, alpha) / lin_interp_integral(skn, z, 0, 6)
+        gvals = (
+            amp * _skew_normal(z, loc, scale, alpha) / lin_interp_integral(skn, z, 0, 6)
+        )
         model_parts[i]["G"] = gvals
 
         min_m = -0.2
@@ -105,7 +107,9 @@ def model_mean_smooth(
     )
     ngammas = []
     for i in range(4):
-        ngamma = (1.0 + model_parts[i]["F"]) * nz[i] + convolve(nz[i], model_parts[i]["G"], mode="same")
+        ngamma = (1.0 + model_parts[i]["F"]) * nz[i] + convolve(
+            nz[i], model_parts[i]["G"], mode="same"
+        )
         ngammas.append(ngamma)
 
     return jnp.stack(ngammas)
@@ -190,7 +194,9 @@ def model(
     params = {}
     for i in range(4):
         for key in ["n", "s", "a", "ml", "mh", "mwidth", "mloc"]:
-            params[f"{key}_b{i}"] = numpyro.sample(f"{key}_b{i}", dist.Uniform(-0.5, 0.5))
+            params[f"{key}_b{i}"] = numpyro.sample(
+                f"{key}_b{i}", dist.Uniform(-0.5, 0.5)
+            )
 
     for k, v in fixed_param_values.items():
         params[k] = numpyro.deterministic(k, v)

@@ -6,7 +6,9 @@ import numpyro  # noqa: E402, I001
 
 numpyro.set_host_device_count(4)
 
+import contextlib  # noqa: E402, I001
 import hashlib  # noqa: E402, I001
+import io  # noqa: E402, I001
 import os  # noqa: E402, I001
 
 import h5py  # noqa: E402, I001
@@ -24,6 +26,9 @@ from des_y6_imsim_analysis.utils import (  # noqa: E402, I001
     compute_eff_nz_from_data,
     read_data,
 )
+
+WRITE = True
+VERSION = "3.1"
 
 fit_stats = {}
 fit_data = {}
@@ -107,6 +112,12 @@ with tqdm.tqdm(ncols=80, total=len(models) * len(keys), desc="fitting models") a
                 num_samples=2500,
             )
 
+            sstr = io.StringIO()
+            with contextlib.redirect_stdout(sstr), contextlib.redirect_stderr(sstr):
+                mcmc.print_summary(exclude_deterministic=False)
+            mcmc_summary = sstr.getvalue()
+            pbar.write(mcmc_summary)
+
             fit_data[model_kind][key] = {
                 "map_params": map_params,
                 "mcmc": mcmc,
@@ -133,24 +144,27 @@ with tqdm.tqdm(ncols=80, total=len(models) * len(keys), desc="fitting models") a
             fit_stats[model_kind][key]["map_params"] = {
                 k: float(v) for k, v in map_params.items()
             }
+            fit_stats[model_kind][key]["mcmc_summary"] = mcmc_summary
 
             pbar.update(1)
 
-with h5py.File("imsim_v3_mcmc_samples.h5", "w") as fp:
-    for model in models:
-        model_kind = model["model_kind"]
-        for key in keys:
-            samples = fit_data[model_kind][key]["mcmc"].get_samples()
-            for param in samples:
-                fp.create_dataset(
-                    f"{model_kind}-{key}/{param}",
-                    data=np.asarray(samples[param], dtype=np.float64),
-                    compression="gzip",
-                )
+if WRITE:
+    with h5py.File(f"imsim_v{VERSION}_mcmc_samples.h5", "w") as fp:
+        for model in models:
+            model_kind = model["model_kind"]
+            for key in keys:
+                samples = fit_data[model_kind][key]["mcmc"].get_samples()
+                for param in samples:
+                    fp.create_dataset(
+                        f"{model_kind}-{key}/{param}",
+                        data=np.asarray(samples[param], dtype=np.float64),
+                        compression="gzip",
+                    )
 
 
-with open("fit_stats.yml", "w") as f:
-    yaml.dump(fit_stats, f, default_flow_style=False, indent=2)
+if WRITE:
+    with open(f"fit_stats_v{VERSION}.yml", "w") as f:
+        yaml.dump(fit_stats, f, default_flow_style=False, indent=2)
 
 
 desnz = np.load("../../data/Tz_realizations_WZ_bq_pile4_0d05.npy")
@@ -186,6 +200,30 @@ with tqdm.tqdm(
 
                 dz_mn = np.mean(dzvals, axis=0)
                 dz_sd = np.std(dzvals, axis=0)
+
+                if skip_nn:
+                    fit_stats[model_kind][key]["m_mn_nn"] = [
+                        float(mval) for mval in m_mn
+                    ]
+                    fit_stats[model_kind][key]["m_sd_nn"] = [
+                        float(mval) for mval in m_sd
+                    ]
+                    fit_stats[model_kind][key]["dz_mn_nn"] = [
+                        float(dzval) for dzval in dz_mn
+                    ]
+                    fit_stats[model_kind][key]["dz_sd_nn"] = [
+                        float(dzval) for dzval in dz_sd
+                    ]
+                else:
+                    fit_stats[model_kind][key]["m_mn"] = [float(mval) for mval in m_mn]
+                    fit_stats[model_kind][key]["m_sd"] = [float(mval) for mval in m_sd]
+                    fit_stats[model_kind][key]["dz_mn"] = [
+                        float(dzval) for dzval in dz_mn
+                    ]
+                    fit_stats[model_kind][key]["dz_sd"] = [
+                        float(dzval) for dzval in dz_sd
+                    ]
+
                 pbar.write(f"""\
 model-kind|key|shift_nonneg: {model_kind}|{key}|{skip_nn}
 |--------------------------------------------|
@@ -201,26 +239,31 @@ model-kind|key|shift_nonneg: {model_kind}|{key}|{skip_nn}
                 pbar.update(1)
 
         if skip_nn:
-            dfname = "des_y6_nz_SOMPZ_WZ_imsim_v3_nonneg.h5"
+            dfname = f"des_y6_nz_SOMPZ_WZ_imsim_v{VERSION}_nonneg.h5"
         else:
-            dfname = "des_y6_nz_SOMPZ_WZ_imsim_v3.h5"
+            dfname = f"des_y6_nz_SOMPZ_WZ_imsim_v{VERSION}.h5"
 
-        with h5py.File(dfname, "w") as fp:
-            for model in models:
-                model_kind = model["model_kind"]
-                for key in keys:
-                    fp.create_dataset(
-                        f"{model_kind}-{key}/m",
-                        data=corr_nz[model_kind][key]["mvals"],
-                        compression="gzip",
-                    )
-                    fp.create_dataset(
-                        f"{model_kind}-{key}/dz",
-                        data=corr_nz[model_kind][key]["dzvals"],
-                        compression="gzip",
-                    )
-                    fp.create_dataset(
-                        f"{model_kind}-{key}/nz",
-                        data=corr_nz[model_kind][key]["finalnzs"],
-                        compression="gzip",
-                    )
+        if WRITE:
+            with h5py.File(dfname, "w") as fp:
+                for model in models:
+                    model_kind = model["model_kind"]
+                    for key in keys:
+                        fp.create_dataset(
+                            f"{model_kind}-{key}/m",
+                            data=corr_nz[model_kind][key]["mvals"],
+                            compression="gzip",
+                        )
+                        fp.create_dataset(
+                            f"{model_kind}-{key}/dz",
+                            data=corr_nz[model_kind][key]["dzvals"],
+                            compression="gzip",
+                        )
+                        fp.create_dataset(
+                            f"{model_kind}-{key}/nz",
+                            data=corr_nz[model_kind][key]["finalnzs"],
+                            compression="gzip",
+                        )
+
+if WRITE:
+    with open(f"fit_stats_v{VERSION}.yml", "w") as f:
+        yaml.dump(fit_stats, f, default_flow_style=False, indent=2)
