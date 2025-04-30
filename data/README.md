@@ -12,3 +12,5 @@
     - statistical-nz: weights are product of statistical shear weight and nz-match weight
     - statistical-neighbor-nz: weights are product of statistical shear weight, neighbor weight, and nz-match weight
 - v3: same as v2 but using averaged diagonal of response
+    - y3: y3-like selection
+    - y3-complement: complement of y3-like selection; treated as one tomographic bin (index `-1`)
