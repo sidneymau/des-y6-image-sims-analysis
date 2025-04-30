@@ -15,6 +15,7 @@ from des_y6_imsim_analysis.utils import (  # noqa: E402
     lin_interp_integral,
     lin_interp_integral_nojit,
     nz_binned_to_interp,
+    shift_negative_nz_values,
     sompz_integral,
     sompz_integral_nojit,
 )
@@ -391,3 +392,17 @@ def test_lin_interp_integral(func):
                 atol=1e-8,
                 err_msg=f"low={low}, high={high}",
             )
+
+
+@pytest.mark.parametrize(
+    "nz, nz_expected",
+    [
+        (np.array([1.0, 0, 1.0]), np.array([1, 0.0, 1])),
+        (np.array([0.7, 1.0, -1.0, 1.0, 0.5]), np.array([0.7, 0.5, 0.0, 0.5, 0.5])),
+        (np.array([1.0, 1.0, -1.0]), np.array([1.0, 0.0, 0.0])),
+        (np.array([-1.0, 1.0, 1.0]), np.array([0.0, 0.0, 1.0])),
+    ],
+)
+def test_shift_negative_nz_values(nz, nz_expected):
+    nz_shifted = shift_negative_nz_values(nz)
+    np.testing.assert_allclose(nz_shifted, nz_expected)
