@@ -323,7 +323,9 @@ def lin_interp_integral_nojit(y, x, low, high):
 lin_interp_integral = jax.jit(lin_interp_integral_nojit)
 
 
-def plot_results_symlog_nz(*, model_module, model_data, samples=None, map_params=None):
+def plot_results_nz(
+    *, model_module, model_data, samples=None, map_params=None, symlog=True
+):
     mn_pars = tuple(tuple(mnp.tolist()) for mnp in model_data["mn_pars"])
     z = model_data["z"]
     nzs = model_data["nz"]
@@ -385,7 +387,7 @@ def plot_results_symlog_nz(*, model_module, model_data, samples=None, map_params
         ngamma_ints = []
         for ngamma in ngammas:
             ngamma_int = []
-            for j in range(10):
+            for j in range(zbins.shape[0] - 1):
                 nind = mn_pars.index((j, bi))
                 bin_zmin, bin_zmax = zbins[j + 1]
                 bin_dz = bin_zmax - bin_zmin
@@ -402,10 +404,10 @@ def plot_results_symlog_nz(*, model_module, model_data, samples=None, map_params
         # plot the stuff
         axhist.axhline(0.0, color="black", linestyle="dotted")
         axhist.grid(False)
-        axhist.set_yscale("symlog", linthresh=0.2)
+        if symlog:
+            axhist.set_yscale("symlog", linthresh=1e-3)
         axhist.format(
             xlim=(0, 4.19),
-            ylim=(-0.02, 10.0),
             title=f"bin {bi}",
             titleloc="ul",
             xlabel="redshift",
@@ -417,7 +419,7 @@ def plot_results_symlog_nz(*, model_module, model_data, samples=None, map_params
         axdiff.axhline(0.0, color="black", linestyle="dotted")
         axdiff.format(
             ylim=(-3, 3),
-            ylabel=r"(model - data)/error" if bi % 2 == 0 else None,
+            ylabel=r"(data - model)/error" if bi % 2 == 0 else None,
             yticklabels=[] if bi % 2 == 1 else None,
         )
 
@@ -436,7 +438,7 @@ def plot_results_symlog_nz(*, model_module, model_data, samples=None, map_params
             color="black",
             label=r"$n_\gamma(z)$",
         )
-        for i in range(10):
+        for i in range(zbins.shape[0] - 1):
             nind = mn_pars.index((i, bi))
             bin_zmin, bin_zmax = zbins[i + 1]
             bin_dz = bin_zmax - bin_zmin
@@ -506,7 +508,9 @@ def plot_results_symlog_nz(*, model_module, model_data, samples=None, map_params
     return fig
 
 
-def plot_results_delta_nz(*, model_module, model_data, samples=None, map_params=None):
+def plot_results_delta_nz(
+    *, model_module, model_data, samples=None, map_params=None, symlog=True
+):
     mn_pars = tuple(tuple(mnp.tolist()) for mnp in model_data["mn_pars"])
     z = model_data["z"]
     nzs = model_data["nz"]
@@ -550,7 +554,7 @@ def plot_results_delta_nz(*, model_module, model_data, samples=None, map_params=
         ngamma_ints = []
         for ngamma in ngammas:
             ngamma_int = []
-            for j in range(10):
+            for j in range(zbins.shape[0] - 1):
                 nind = mn_pars.index((j, bi))
                 bin_zmin, bin_zmax = zbins[j + 1]
                 bin_dz = bin_zmax - bin_zmin
@@ -564,10 +568,10 @@ def plot_results_delta_nz(*, model_module, model_data, samples=None, map_params=
         ax = axs[bi_row, bi_col]
 
         ax.axhline(0.0, color="black", linestyle="dotted")
-        ax.set_yscale("symlog", linthresh=0.01)
+        if symlog:
+            ax.set_yscale("symlog", linthresh=1e-3)
         ax.format(
             xlim=(0, 4.19),
-            ylim=(-0.29, 0.39),
             title=f"bin {bi}",
             titleloc="ur",
             xlabel="redshift",
@@ -592,7 +596,7 @@ def plot_results_delta_nz(*, model_module, model_data, samples=None, map_params=
                 label="model",
                 step="mid",
             )
-        for i in range(10):
+        for i in range(zbins.shape[0] - 1):
             nind = mn_pars.index((i, bi))
             bin_zmin, bin_zmax = zbins[i + 1]
             bin_dz = bin_zmax - bin_zmin
@@ -607,7 +611,7 @@ def plot_results_delta_nz(*, model_module, model_data, samples=None, map_params=
                 np.ones(2) * nga_val + nga_err,
                 color="blue",
                 alpha=0.5,
-                label=r"$N_{\gamma}^{\alpha}$" if i == 0 else None
+                label=r"$N_{\gamma}^{\alpha}$" if i == 0 else None,
             )
             ax.hlines(
                 nga_val,
@@ -630,16 +634,17 @@ def plot_results_delta_nz(*, model_module, model_data, samples=None, map_params=
 
 
 def plot_results_fg_model(*, model_module, model_data, map_params=None, samples=None):
+    kwargs = {k: model_data[k] for k in model_data["extra_kwargs"]}
     if samples is None:
         model_parts_mn = model_module.model_parts_smooth(
             params=map_params,
-            pts=model_data["pts"],
             z=model_data["z"],
-            nz=None,
+            nz=model_data["nz"],
             mn_pars=None,
-            zbins=None,
+            zbins=model_data["zbins"],
             mn=None,
             cov=None,
+            **kwargs,
         )
         model_parts_sd = None
     else:
@@ -651,13 +656,13 @@ def plot_results_fg_model(*, model_module, model_data, map_params=None, samples=
 
             si_model_parts = model_module.model_parts_smooth(
                 params=si_params,
-                pts=model_data["pts"],
                 z=model_data["z"],
-                nz=None,
+                nz=model_data["nz"],
                 mn_pars=None,
-                zbins=None,
+                zbins=model_data["zbins"],
                 mn=None,
                 cov=None,
+                **kwargs,
             )
             for bi in range(4):
                 model_parts[bi]["F"].append(si_model_parts[bi]["F"])
@@ -675,61 +680,93 @@ def plot_results_fg_model(*, model_module, model_data, map_params=None, samples=
                 "G": np.std(model_parts[bi]["G"], axis=0),
             }
 
+    all_g_zero = True
+    for bi in range(4):
+        if np.any(model_parts_mn[bi]["G"] != 0.0):
+            all_g_zero = False
+            break
+    plot_g = not all_g_zero
+
+    all_f_zero = True
+    for bi in range(4):
+        if np.any(model_parts_mn[bi]["F"] != 0.0):
+            all_f_zero = False
+            break
+    plot_f = not all_f_zero
+
+    if plot_f and plot_g:
+        ncols = 2
+    else:
+        ncols = 1
+
     colors = uplt.Cycle("default", N=4).by_key()["color"]
 
     fig, axs = uplt.subplots(
         nrows=1,
-        ncols=2,
-        figsize=(8, 4),
+        ncols=ncols,
+        figsize=(8, 4) if ncols == 2 else (5, 5),
         sharex=False,
         sharey=False,
     )
 
-    ax = axs[0, 0]
-    for bi in range(4):
-        ax.plot(
-            model_data["z"],
-            model_parts_mn[bi]["F"],
-            label=f"bin {bi}",
-            color=colors[bi],
-        )
-        if model_parts_sd is not None:
-            ax.fill_between(
+    if ncols == 2:
+        axf = axs[0, 0]
+        axg = axs[0, 1]
+    else:
+        if plot_f:
+            axf = axs[0]
+            axg = None
+        else:
+            axf = None
+            axg = axs[0]
+
+    if axf is not None:
+        ax = axf
+        for bi in range(4):
+            ax.plot(
                 model_data["z"],
-                model_parts_mn[bi]["F"] - model_parts_sd[bi]["F"],
-                model_parts_mn[bi]["F"] + model_parts_sd[bi]["F"],
-                alpha=0.2,
+                model_parts_mn[bi]["F"],
+                label=f"bin {bi}",
                 color=colors[bi],
             )
+            if model_parts_sd is not None:
+                ax.fill_between(
+                    model_data["z"],
+                    model_parts_mn[bi]["F"] - model_parts_sd[bi]["F"],
+                    model_parts_mn[bi]["F"] + model_parts_sd[bi]["F"],
+                    alpha=0.2,
+                    color=colors[bi],
+                )
 
-    ax.legend(loc="ll", frameon=False, ncols=1)
-    ax.format(
-        xlim=(0, 4.19),
-        xlabel="redshift",
-        ylabel=r"$F(z)$",
-    )
-
-    ax = axs[0, 1]
-    for bi in range(4):
-        ax.plot(
-            model_data["z"],
-            model_parts_mn[bi]["G"],
-            label=f"bin {bi}",
-            color=colors[bi],
+        ax.legend(loc="ur", frameon=False, ncols=1)
+        ax.format(
+            xlim=(0, 4.19),
+            xlabel="redshift",
+            ylabel=r"$F(z)$",
         )
-        if model_parts_sd is not None:
-            ax.fill_between(
+
+    if axg is not None:
+        ax = axg
+        for bi in range(4):
+            ax.plot(
                 model_data["z"],
-                model_parts_mn[bi]["G"] - model_parts_sd[bi]["G"],
-                model_parts_mn[bi]["G"] + model_parts_sd[bi]["G"],
-                alpha=0.2,
+                model_parts_mn[bi]["G"],
+                label=f"bin {bi}",
                 color=colors[bi],
             )
-    ax.format(
-        xlim=(0, 4.19),
-        xlabel="redshift",
-        ylabel=r"$G(z)$",
-    )
+            if model_parts_sd is not None:
+                ax.fill_between(
+                    model_data["z"],
+                    model_parts_mn[bi]["G"] - model_parts_sd[bi]["G"],
+                    model_parts_mn[bi]["G"] + model_parts_sd[bi]["G"],
+                    alpha=0.2,
+                    color=colors[bi],
+                )
+        ax.format(
+            xlim=(0, 4.19),
+            xlabel="redshift",
+            ylabel=r"$G(z)$",
+        )
 
     return fig
 
@@ -772,7 +809,70 @@ def measure_m_dz(*, model_module, model_data, samples, return_dict=False):
     return data
 
 
-def compute_eff_nz_from_data(*, model_module, mcmc_samples, model_data, input_nz, rng):
+def shift_negative_nz_values(nz):
+    """Shift negative values in an n(z) to adjacent positive bins.
+
+    Parameters
+    ----------
+    nz : array
+        The n(z) values.
+
+    Returns
+    -------
+    array
+        The n(z) values with negative values shifted to adjacent positive bins.
+    """
+    msk = nz < 0.0
+    if np.any(msk):
+        for nind in np.where(msk)[0]:
+            if nind == 0:
+                shifts = [1]
+            elif nind == nz.shape[0] - 1:
+                shifts = [-1]
+            else:
+                shifts = [-1, 1]
+            lim_val = np.abs(nz[nind])
+
+            shift_inds = []
+            for shift in shifts:
+                done = False
+                shift_ind = nind + shift
+                while not done and shift_ind >= 0 and shift_ind < nz.shape[0]:
+                    if nz[shift_ind] >= lim_val:
+                        shift_inds.append(shift_ind)
+                        done = True
+
+                    shift_ind += shift
+
+                if not done:
+                    shift_inds.append(None)
+
+            shift_inds = [si for si in shift_inds if si is not None]
+            assert len(shift_inds) > 0
+
+            half_neg = nz[nind] / len(shift_inds)
+            for shift_ind in shift_inds:
+                nz[shift_ind] = nz[shift_ind] + half_neg
+
+            nz[nind] = 0.0
+
+        assert np.all(nz >= 0.0), "negative n(z) values remain!"
+
+    return nz
+
+
+def compute_eff_nz_from_data(
+    *,
+    model_module,
+    mcmc_samples,
+    model_data,
+    input_nz,
+    rng,
+    clip_zero=False,
+    shift_negative=False,
+    progress_bar=False,
+    input_nz_mean_only=False,
+):
     """Compute the effective nz for a given set of input n(z) values and MCMC samples
     for the model parameters.
 
@@ -790,6 +890,16 @@ def compute_eff_nz_from_data(*, model_module, mcmc_samples, model_data, input_nz
         The input n(z) values. Shape is (# of input nzs, # of tomo bins, nz dimension).
     rng : np.random.RandomState
         Random number generator for sampling.
+    clip_zero : bool, optional
+        If True, clip the output finalnzs to be strictly non-negative. Default is False.
+    shift_negative : bool, optional
+        If True, attempt to shift negative n(z) values to adjacent positive bins.
+        Default is False.
+    progress_bar : bool, optional
+        If True, show a progress bar for the computation. Default is False.
+    input_nz_mean_only : bool, optional
+        If True, only apply the simulation model to the mean of the input n(z) values.
+        Default is False.
 
     Returns
     -------
@@ -803,6 +913,28 @@ def compute_eff_nz_from_data(*, model_module, mcmc_samples, model_data, input_nz
         The final n(z) values for each input n(z) and model parameter sample. Shape is
         (# of input nzs, # of tomo bins, nz dimension).
     """
+    if input_nz_mean_only:
+        ns = input_nz.shape[0]
+        mn_input_nz = np.mean(input_nz, axis=0, keepdims=True)
+        input_nz = np.tile(mn_input_nz, (ns, 1, 1))
+        assert np.allclose(input_nz, mn_input_nz), (
+            "input_nz_mean_only is not working as expected!"
+        )
+
+    if progress_bar:
+        import tqdm
+
+        range_gen = tqdm.trange(input_nz.shape[0])
+    else:
+        range_gen = range(input_nz.shape[0])
+
+    if clip_zero and shift_negative:
+        raise ValueError(
+            "Cannot use both clip_zero and shift_negative at the same time!"
+        )
+
+    kwargs = {k: model_data[k] for k in model_data["extra_kwargs"]}
+
     test_key = list(mcmc_samples.keys())[0]
     n_tomo = input_nz.shape[1]
     assert n_tomo == 4
@@ -813,7 +945,7 @@ def compute_eff_nz_from_data(*, model_module, mcmc_samples, model_data, input_nz
     key_mvals = []
     key_dzvals = []
     key_finalnzs = []
-    for i in range(input_nz.shape[0]):
+    for i in range_gen:
         rind = rng.choice(mcmc_samples[test_key].shape[0])
 
         params = {k: mcmc_samples[k][rind] for k in mcmc_samples.keys()}
@@ -821,7 +953,6 @@ def compute_eff_nz_from_data(*, model_module, mcmc_samples, model_data, input_nz
         for _i in range(n_tomo):
             nz[_i, :] = nz[_i, :] / np.sum(nz[_i, :])
         model_nz = model_module.model_mean_smooth(
-            pts=model_data["pts"],
             z=model_data["z"],
             nz=nz,
             mn_pars=model_data["mn_pars"],
@@ -829,10 +960,22 @@ def compute_eff_nz_from_data(*, model_module, mcmc_samples, model_data, input_nz
             params=params,
             mn=None,
             cov=None,
+            **kwargs,
         )
 
         model_nz = np.array(model_nz)
         assert model_nz.shape == (n_tomo, model_data["z"].shape[0])
+
+        if clip_zero:
+            msk = model_nz < 0.0
+            if np.any(msk):
+                model_nz[msk] = 0.0
+
+        # find the nearest bins above and below with amplitude > negative value / 2
+        # and add the negative value there
+        if shift_negative:
+            for bi in range(4):
+                model_nz[bi, :] = shift_negative_nz_values(model_nz[bi, :])
 
         key_mvals.append(
             [float(sompz_integral(model_nz[_i, :], 0, 6) - 1) for _i in range(n_tomo)]
@@ -861,3 +1004,76 @@ def compute_eff_nz_from_data(*, model_module, mcmc_samples, model_data, input_nz
     assert finalnzs.shape == (input_nz.shape[0], n_tomo, input_nz.shape[-1])
 
     return mvals, dzvals, finalnzs
+
+
+def rebin_data(data, new_bin_ranges):
+    """Rebin the sim data into new bin ranges.
+
+    Parameters
+    ----------
+    data : ModelData
+        The original simulation data.
+    new_bin_ranges : list of 2-tuples
+        The new bins expressed as index ranges into the old bins.
+        For example, the value `[(0, 1), (1, -1)]` would indicate
+        that there are two new bins composed of the old data's 0th
+        bin and all of the other bins of the old data combined.
+
+    Returns
+    -------
+    rebinned_data : ModelData
+        The new simulation data rebinned.
+    """
+    nzs = np.array(data.nzs)
+
+    # wgts = []
+    # for ti in range(nzs.shape[0]):
+    #     nz = nzs[ti, :] / np.sum(nzs[ti, :])
+    #     ti_wgts = []
+    #     for ai in range(data.zbins.shape[0] - 1):
+    #         ti_wgts.append(
+    #             sompz_integral(nz, data.zbins[ai + 1][0], data.zbins[ai + 1][1])
+    #         )
+    #     wgts.append(ti_wgts)
+
+    # wgts = np.array(wgts)
+    # assert np.allclose(np.sum(wgts, axis=1), 1.0)
+
+    new_zbins = np.array(
+        [[data.zbins[0][0], data.zbins[0][1]]]
+        + [[data.zbins[br[0] + 1][0], data.zbins[br[1]][1]] for br in new_bin_ranges]
+    )
+
+    new_mn_pars = [(-1, i) for i in range(4)]
+    for bi in range(len(new_bin_ranges)):
+        new_mn_pars += [(bi, i) for i in range(nzs.shape[0])]
+
+    proj_mat = np.zeros(
+        (data.mn.shape[0], nzs.shape[0] + nzs.shape[0] * len(new_bin_ranges))
+    )
+    for i in range(4):
+        proj_mat[i, i] = 1.0
+
+    loc = 4
+    for bi in range(len(new_bin_ranges)):
+        for ti in range(nzs.shape[0]):
+            br = new_bin_ranges[bi]
+            for bri in range(br[0], br[1] if br[1] != -1 else len(data.zbins) - 1):
+                old_bi = data.mn_pars.index((bri, ti))
+                proj_mat[old_bi, loc] = 1.0  # wgts[ti, bri]
+            loc += 1
+
+    assert np.allclose(np.sum(proj_mat), data.mn.shape[0])
+    assert np.allclose(np.sum(proj_mat > 0, axis=1), 1)
+    # proj_mat /= np.sum(proj_mat, axis=0, keepdims=True)
+    new_mn = data.mn @ proj_mat
+    new_cov = proj_mat.T @ data.cov @ proj_mat
+
+    return ModelData(
+        z=data.z,
+        nzs=data.nzs,
+        mn_pars=new_mn_pars,
+        zbins=new_zbins,
+        mn=new_mn,
+        cov=new_cov,
+    )
