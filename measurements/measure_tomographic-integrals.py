@@ -32,6 +32,17 @@ ALPHA_BINS = [-1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
 ZBINSC = np.arange(0.035, 4, 0.05)
 ZEDGES = np.arange(0.01, 4.02, 0.05)
 
+
+def _Y3_CUTS(d, complement=False):
+    imag = lib.util.flux_to_mag(d["pgauss_band_flux_i"][:])
+    snr = d["gauss_s2n"][:]
+    if complement:
+        sel = (imag > 23.5) | (snr <= 10 * np.sqrt(2))
+    else:
+        sel = (imag <= 23.5) & (snr > 10 * np.sqrt(2))
+    return sel
+
+
 def get_args():
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -58,12 +69,36 @@ def get_args():
         required=False,
         help="weight keys to use",
     )
+    parser.add_argument(
+        "--y3",
+        action="store_true",
+        help="use y3-like selection",
+    )
+    parser.add_argument(
+        "--complement",
+        action="store_true",
+        help="use y3-like complement selection",
+    )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="debug mode",
+    )
 
     return parser.parse_args()
 
 
 
-def _compute_nz(cells, zs, weights, responses, zedges=ZEDGES, zbinsc=ZBINSC):
+def _compute_nz(cells, zs, weights, responses, zedges=ZEDGES, zbinsc=ZBINSC, y3=False, complement=False):
+    if y3 & complement:
+        tomographic_bins = [-1]
+        cell_assignments = {-1: np.array([-1])}
+        cell_ids = [-1, 0]
+    else:
+        tomographic_bins = lib.const.TOMOGRAPHIC_BINS
+        cell_assignments = lib.const.CELL_ASSIGNMENTS
+        cell_ids = lib.const.CELL_IDS
+
     _zs = np.copy(zs)
     _zs[_zs < zbinsc[0]] = zbinsc[0] + 0.001
     _zs[_zs > zbinsc[-1]] = zbinsc[-1] - 0.001
@@ -73,13 +108,13 @@ def _compute_nz(cells, zs, weights, responses, zedges=ZEDGES, zbinsc=ZBINSC):
         _zs,
         weights * responses,
         statistic="sum",
-        bins=[lib.const.CELL_IDS, zedges],
+        bins=[cell_ids, zedges],
     )
 
     nz = {}
-    for tomographic_bin in lib.const.TOMOGRAPHIC_BINS:
+    for tomographic_bin in tomographic_bins:
         nz[tomographic_bin] = np.sum(
-            _nz[lib.const.CELL_ASSIGNMENTS[tomographic_bin]],
+            _nz[cell_assignments[tomographic_bin]],
             axis=0,
         )
 
@@ -89,7 +124,12 @@ def _compute_nz(cells, zs, weights, responses, zedges=ZEDGES, zbinsc=ZBINSC):
     return nz
 
 
-def compute_nz(shear_step_plus, shear_step_minus, weight_keys, zedges=ZEDGES, zbinsc=ZBINSC):
+def compute_nz(shear_step_plus, shear_step_minus, weight_keys, zedges=ZEDGES, zbinsc=ZBINSC, y3=False, complement=False):
+    if y3 & complement:
+        tomographic_bins = [-1]
+    else:
+        tomographic_bins = lib.const.TOMOGRAPHIC_BINS
+
     with (
         h5py.File(lib.const.SIM_SHEAR_CATALOGS[shear_step_plus]) as shear_plus,
         h5py.File(lib.const.SIM_MATCH_CATALOGS[shear_step_plus]) as truth_plus,
@@ -102,6 +142,16 @@ def compute_nz(shear_step_plus, shear_step_minus, weight_keys, zedges=ZEDGES, zb
         w_plus = get_weight(weight_plus["mdet"]["noshear"], weight_keys=weight_keys)
         response_plus = lib.response.get_shear_response(shear_plus["mdet"]["noshear"])
 
+        if y3:
+            _sel = _Y3_CUTS(shear_plus["mdet"]["noshear"], complement=complement)
+            c_plus = c_plus[_sel]
+            z_plus = z_plus[_sel]
+            w_plus = w_plus[_sel]
+            response_plus = response_plus[_sel]
+
+            if complement:
+                c_plus = -1 * np.ones_like(c_plus)
+
         nz_plus = _compute_nz(
             c_plus,
             z_plus,
@@ -109,6 +159,8 @@ def compute_nz(shear_step_plus, shear_step_minus, weight_keys, zedges=ZEDGES, zb
             response_plus,
             zedges=zedges,
             zbinsc=zbinsc,
+            y3=y3,
+            complement=complement,
         )
 
     with (
@@ -123,6 +175,16 @@ def compute_nz(shear_step_plus, shear_step_minus, weight_keys, zedges=ZEDGES, zb
         w_minus = get_weight(weight_minus["mdet"]["noshear"], weight_keys=weight_keys)
         response_minus = lib.response.get_shear_response(shear_minus["mdet"]["noshear"])
 
+        if y3:
+            _sel = _Y3_CUTS(shear_minus["mdet"]["noshear"], complement=complement)
+            c_minus = c_minus[_sel]
+            z_minus = z_minus[_sel]
+            w_minus = w_minus[_sel]
+            response_minus = response_minus[_sel]
+
+            if complement:
+                c_minus = -1 * np.ones_like(c_minus)
+
         nz_minus = _compute_nz(
             c_minus,
             z_minus,
@@ -130,10 +192,12 @@ def compute_nz(shear_step_plus, shear_step_minus, weight_keys, zedges=ZEDGES, zb
             response_minus,
             zedges=zedges,
             zbinsc=zbinsc,
+            y3=y3,
+            complement=complement,
         )
 
     nz = {}
-    for tomographic_bin in lib.const.TOMOGRAPHIC_BINS:
+    for tomographic_bin in tomographic_bins:
         nz[tomographic_bin] = (nz_plus[tomographic_bin] + nz_minus[tomographic_bin]) / 2.
 
     return nz, zedges, zbinsc
@@ -166,7 +230,7 @@ def concatenate_catalogs(data):
     return dp, dm
 
 
-def process_file(shear, tomo, weight, tile, weight_keys, tomographic_bin=None):
+def process_file(shear, tomo, weight, tile, weight_keys, tomographic_bin=None, y3=False, complement=False):
     res = {}
     for mdet_step in lib.const.MDET_STEPS:
         mdet_cat = shear["mdet"][mdet_step]
@@ -179,8 +243,15 @@ def process_file(shear, tomo, weight, tile, weight_keys, tomographic_bin=None):
         in_tile = mdet_cat["tilename"][:] == tile
 
         # in_tomo = bhat[mdet_step] == tomographic_bin
-        in_tomo = (tomo["sompz"][mdet_step]["bhat"][:] == tomographic_bin)
-        sel = in_tile & in_tomo
+        if y3 & complement:
+            sel = in_tile
+        else:
+            in_tomo = (tomo["sompz"][mdet_step]["bhat"][:] == tomographic_bin)
+            sel = in_tile & in_tomo
+
+        if y3:
+            _y3_sel= _Y3_CUTS(mdet_cat, complement=complement)
+            sel &= _y3_sel
 
         n = np.sum(w[sel])
         if n > 0:
@@ -201,9 +272,9 @@ def process_file(shear, tomo, weight, tile, weight_keys, tomographic_bin=None):
     return res
 
 
-def process_file_pair(shear_plus, shear_minus, tomo_plus, tomo_minus, weight_plus, weight_minus, weight_keys, *, tile, tomographic_bin=None):
-    dp = process_file(shear_plus, tomo_plus, weight_plus, tile, weight_keys, tomographic_bin=tomographic_bin)
-    dm = process_file(shear_minus, tomo_minus, weight_minus, tile, weight_keys, tomographic_bin=tomographic_bin)
+def process_file_pair(shear_plus, shear_minus, tomo_plus, tomo_minus, weight_plus, weight_minus, weight_keys, *, tile, tomographic_bin=None, y3=False, complement=False):
+    dp = process_file(shear_plus, tomo_plus, weight_plus, tile, weight_keys, tomographic_bin=tomographic_bin, y3=y3, complement=complement)
+    dm = process_file(shear_minus, tomo_minus, weight_minus, tile, weight_keys, tomographic_bin=tomographic_bin, y3=y3, complement=complement)
 
     return dp, dm
 
@@ -238,7 +309,12 @@ def compute_shear_pair(dp, dm):
     )
 
 
-def process_pair(shear_step_plus, shear_step_minus, weight_keys, seed=None, resample="jackknife"):
+def process_pair(shear_step_plus, shear_step_minus, weight_keys, seed=None, resample="jackknife", y3=False, complement=False, debug=False):
+    if y3 & complement:
+        tomographic_bins = [-1]
+    else:
+        tomographic_bins = lib.const.TOMOGRAPHIC_BINS
+
     shear_plus = h5py.File(lib.const.SIM_SHEAR_CATALOGS[shear_step_plus])
     tomo_plus = h5py.File(lib.const.SIM_TOMOGRAPHY_CATALOGS[shear_step_plus])
     weight_plus = h5py.File(lib.const.SIM_WEIGHT_CATALOGS[shear_step_plus])
@@ -250,12 +326,14 @@ def process_pair(shear_step_plus, shear_step_minus, weight_keys, seed=None, resa
     tilenames_p = np.unique(shear_plus["mdet"]["noshear"]["tilename"][:])
     tilenames_m = np.unique(shear_minus["mdet"]["noshear"]["tilename"][:])
     tilenames = np.intersect1d(tilenames_p, tilenames_m)
+    if debug:
+        tilenames = tilenames[:10]
     ntiles = len(tilenames)
 
     results = {}
-    for tomographic_bin in lib.const.TOMOGRAPHIC_BINS:
+    for tomographic_bin in tomographic_bins:
         data = [
-            process_file_pair(shear_plus, shear_minus, tomo_plus, tomo_minus, weight_plus, weight_minus, weight_keys, tile=tile, tomographic_bin=tomographic_bin)
+            process_file_pair(shear_plus, shear_minus, tomo_plus, tomo_minus, weight_plus, weight_minus, weight_keys, tile=tile, tomographic_bin=tomographic_bin, y3=y3, complement=complement)
             for tile in tqdm.tqdm(
                 tilenames,
                 total=ntiles,
@@ -301,15 +379,30 @@ def main():
     # kwargs = {"seed": None, "resample": "jackknife"}
     # kwargs = {"seed": 42, "resample": "bootstrap"}
     args = get_args()
+    print(args)
 
     seed = args.seed
     resample = args.resample
     weights = args.weights
+    y3 = args.y3
+    complement = args.complement
+    debug = args.debug
+
+    if y3 & complement:
+        tomographic_bins = [-1]
+    else:
+        tomographic_bins = lib.const.TOMOGRAPHIC_BINS
 
     weight_keys = [f"{weight}_weight" for weight in weights]
 
     output_template = "N_gamma_alpha_v3_{}.hdf5"
-    output_filename = output_template.format("-".join(weights))
+    output_tag = "-".join(weights)
+    if y3:
+        output_tag += "_y3"
+        if complement:
+            output_tag += "-complement"
+    output_filename = output_template.format(output_tag)
+    print(f"Will write {output_filename}")
 
     shear_constant_step_pair = (
         "g1_slice=0.02__g2_slice=0.00__g1_other=0.00__g2_other=0.00__zlow=0.0__zhigh=6.0",
@@ -360,7 +453,6 @@ def main():
     ]
 
     print(f"Processing with weights: {weights}")
-    
 
     results = {}
     futures = {}
@@ -372,6 +464,9 @@ def main():
             weight_keys,
             seed=seed,
             resample=resample,
+            y3=y3,
+            complement=complement,
+            debug=debug,
         )
         # we let alpha=-1 represent the constant shear simulation
         futures[-1] = _future
@@ -384,13 +479,16 @@ def main():
                 weight_keys,
                 seed=seed,
                 resample=resample,
+                y3=y3,
+                complement=complement,
+                debug=debug,
             )
             futures[alpha] = _future
 
         for alpha, future in futures.items():
             results[alpha] = future.result()
 
-    xi = list(itertools.product(ALPHA_BINS, lib.const.TOMOGRAPHIC_BINS))
+    xi = list(itertools.product(ALPHA_BINS, tomographic_bins))
     mean_params = np.array(xi)
     cov = list(itertools.product(xi, xi))
     cov_params = np.array(cov).reshape(len(xi), len(xi), 2, 2)
@@ -455,14 +553,14 @@ def main():
 
     # ---
 
-    nz, zedges, zbinsc = compute_nz(shear_constant_step_pair[0], shear_constant_step_pair[1], weight_keys, zedges=ZEDGES, zbinsc=ZBINSC)
+    nz, zedges, zbinsc = compute_nz(shear_constant_step_pair[0], shear_constant_step_pair[1], weight_keys, zedges=ZEDGES, zbinsc=ZBINSC, y3=y3, complement=complement)
 
     with h5py.File(output_filename, "r+") as hf:
         redshift_group = hf.create_group("redshift")
         redshift_group.create_dataset("zedges", data=zedges)
         redshift_group.create_dataset("zbinsc", data=zbinsc)
 
-        for tomographic_bin in lib.const.TOMOGRAPHIC_BINS:
+        for tomographic_bin in tomographic_bins:
             groupname = f"bin{tomographic_bin}"
             redshift_group.create_dataset(groupname, data=nz[tomographic_bin])
 
