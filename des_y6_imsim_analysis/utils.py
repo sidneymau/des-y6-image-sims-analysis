@@ -84,8 +84,9 @@ def read_data(filename):
             cutind = 0
         z = z[cutind:]
 
+        n_tomo = len(list(d["redshift"].keys()))
         nzs = []
-        for _bin in range(4):
+        for _bin in range(n_tomo):
             nzs.append(d[f"redshift/bin{_bin}"][:].astype(np.float64))
             nzs[-1] = nzs[-1][cutind:] / np.sum(nzs[-1][cutind:])
         nzs = np.array(nzs, dtype=np.float64)
@@ -333,6 +334,8 @@ def plot_results_nz(
     cov = model_data["cov"]
     zbins = model_data["zbins"]
 
+    n_tomo = nzs.shape[0]
+
     # fmt: off
     array = [
         [1, 3,],
@@ -357,7 +360,7 @@ def plot_results_nz(
         hspace=[0] * 4 + [None] + [0] * 4,
     )
 
-    for bi in range(4):
+    for bi in range(n_tomo):
         # first extract the stats from fit
         if samples is not None:
             ngammas = []
@@ -518,13 +521,15 @@ def plot_results_delta_nz(
     cov = model_data["cov"]
     zbins = model_data["zbins"]
 
+    n_tomo = nzs.shape[0]
+
     fig, axs = uplt.subplots(
         nrows=2,
         ncols=2,
         figsize=(8, 6),
     )
 
-    for bi in range(4):
+    for bi in range(n_tomo):
         # first extract the stats from fit
         if samples is not None:
             ngammas = []
@@ -634,6 +639,8 @@ def plot_results_delta_nz(
 
 
 def plot_results_fg_model(*, model_module, model_data, map_params=None, samples=None):
+    n_tomo = model_data["nz"].shape[0]
+
     kwargs = {k: model_data[k] for k in model_data["extra_kwargs"]}
     if samples is None:
         model_parts_mn = model_module.model_parts_smooth(
@@ -648,7 +655,7 @@ def plot_results_fg_model(*, model_module, model_data, map_params=None, samples=
         )
         model_parts_sd = None
     else:
-        model_parts = {bi: {"F": [], "G": []} for bi in range(4)}
+        model_parts = {bi: {"F": [], "G": []} for bi in range(n_tomo)}
         for si in range(1000):
             si_params = {}
             for k, v in samples.items():
@@ -664,13 +671,13 @@ def plot_results_fg_model(*, model_module, model_data, map_params=None, samples=
                 cov=None,
                 **kwargs,
             )
-            for bi in range(4):
+            for bi in range(n_tomo):
                 model_parts[bi]["F"].append(si_model_parts[bi]["F"])
                 model_parts[bi]["G"].append(si_model_parts[bi]["G"])
 
         model_parts_mn = {}
         model_parts_sd = {}
-        for bi in range(4):
+        for bi in range(n_tomo):
             model_parts_mn[bi] = {
                 "F": np.mean(model_parts[bi]["F"], axis=0),
                 "G": np.mean(model_parts[bi]["G"], axis=0),
@@ -681,14 +688,14 @@ def plot_results_fg_model(*, model_module, model_data, map_params=None, samples=
             }
 
     all_g_zero = True
-    for bi in range(4):
+    for bi in range(n_tomo):
         if np.any(model_parts_mn[bi]["G"] != 0.0):
             all_g_zero = False
             break
     plot_g = not all_g_zero
 
     all_f_zero = True
-    for bi in range(4):
+    for bi in range(n_tomo):
         if np.any(model_parts_mn[bi]["F"] != 0.0):
             all_f_zero = False
             break
@@ -722,7 +729,7 @@ def plot_results_fg_model(*, model_module, model_data, map_params=None, samples=
 
     if axf is not None:
         ax = axf
-        for bi in range(4):
+        for bi in range(n_tomo):
             ax.plot(
                 model_data["z"],
                 model_parts_mn[bi]["F"],
@@ -747,7 +754,7 @@ def plot_results_fg_model(*, model_module, model_data, map_params=None, samples=
 
     if axg is not None:
         ax = axg
-        for bi in range(4):
+        for bi in range(n_tomo):
             ax.plot(
                 model_data["z"],
                 model_parts_mn[bi]["G"],
@@ -771,11 +778,13 @@ def plot_results_fg_model(*, model_module, model_data, map_params=None, samples=
     return fig
 
 
-def measure_m_dz(*, model_module, model_data, samples, return_dict=False):
+def measure_m_dz(*, model_module, model_data, samples, return_dict=False, shift_negative=False):
     nzs = model_data["nz"]
+    n_tomo = nzs.shape[0]
+
     n_samples = 1000
     data = np.zeros((8, n_samples))
-    for bi in range(4):
+    for bi in range(n_tomo):
         z_nz = compute_nz_binned_mean(nzs[bi])
         assert np.allclose(sompz_integral(nzs[bi], 0.0, 6.0), 1.0)
         for i in range(n_samples):
@@ -785,6 +794,10 @@ def measure_m_dz(*, model_module, model_data, samples, return_dict=False):
             ngamma = model_module.model_mean_smooth_tomobin(
                 **model_data, tbind=bi, params=_params
             )
+
+            if shift_negative:
+                ngamma = shift_negative_nz_values(np.asarray(ngamma).copy())
+
             m = sompz_integral(ngamma, 0.0, 6.0) - 1.0
             z_ngamma = compute_nz_binned_mean(ngamma)
 
@@ -974,7 +987,7 @@ def compute_eff_nz_from_data(
         # find the nearest bins above and below with amplitude > negative value / 2
         # and add the negative value there
         if shift_negative:
-            for bi in range(4):
+            for bi in range(n_tomo):
                 model_nz[bi, :] = shift_negative_nz_values(model_nz[bi, :])
 
         key_mvals.append(
@@ -1025,6 +1038,7 @@ def rebin_data(data, new_bin_ranges):
         The new simulation data rebinned.
     """
     nzs = np.array(data.nzs)
+    n_tomo = nzs.shape[0]
 
     # wgts = []
     # for ti in range(nzs.shape[0]):
@@ -1044,17 +1058,17 @@ def rebin_data(data, new_bin_ranges):
         + [[data.zbins[br[0] + 1][0], data.zbins[br[1]][1]] for br in new_bin_ranges]
     )
 
-    new_mn_pars = [(-1, i) for i in range(4)]
+    new_mn_pars = [(-1, i) for i in range(n_tomo)]
     for bi in range(len(new_bin_ranges)):
         new_mn_pars += [(bi, i) for i in range(nzs.shape[0])]
 
     proj_mat = np.zeros(
         (data.mn.shape[0], nzs.shape[0] + nzs.shape[0] * len(new_bin_ranges))
     )
-    for i in range(4):
+    for i in range(n_tomo):
         proj_mat[i, i] = 1.0
 
-    loc = 4
+    loc = n_tomo
     for bi in range(len(new_bin_ranges)):
         for ti in range(nzs.shape[0]):
             br = new_bin_ranges[bi]

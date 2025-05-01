@@ -38,7 +38,7 @@ def model_parts_smooth(
     gtemp = gtemp / gtemp.sum()
 
     model_parts = {}
-    for i in range(4):
+    for i in range(nz.shape[0]):
         model_parts[i] = {}
 
         xp = make_interpolant_pts(n_pts, zbins)
@@ -109,7 +109,7 @@ def model_mean_smooth(
         params=params,
     )
     ngammas = []
-    for i in range(4):
+    for i in range(nz.shape[0]):
         ngamma = (1.0 + model_parts[i]["F"]) * nz[i] + model_parts[i]["G"]
         ngammas.append(ngamma)
 
@@ -205,7 +205,7 @@ def model(
     fixed_param_values = fixed_param_values or {}
 
     params = {}
-    for i in range(4):
+    for i in range(nz.shape[0]):
         for j in range(n_pts):
             params[f"a{j}_b{i}"] = numpyro.sample(f"a{j}_b{i}", dist.Uniform(0, 1))
 
