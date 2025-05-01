@@ -32,6 +32,8 @@ ALPHA_BINS = [-1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
 ZBINSC = np.arange(0.035, 4, 0.05)
 ZEDGES = np.arange(0.01, 4.02, 0.05)
 
+# tomographic_bins = lib.const.TOMOGRAPHIC_BINS
+
 
 def _Y3_CUTS(d, complement=False):
     imag = lib.util.flux_to_mag(d["pgauss_band_flux_i"][:])
@@ -43,6 +45,11 @@ def _Y3_CUTS(d, complement=False):
     return sel
 
 
+def _MAG_CUTS(d, mag_low, mag_high):
+    imag = lib.util.flux_to_mag(d["pgauss_band_flux_i"][:])
+    return (imag > mag_low) & (imag <= mag_high)
+
+
 def get_args():
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -50,7 +57,7 @@ def get_args():
         type=int,
         required=False,
         default=None,
-        help="RNG seed [int]",
+        help="RNG seed; only used for bootstrap resampling",
     )
     parser.add_argument(
         "--resample",
@@ -70,27 +77,62 @@ def get_args():
         help="weight keys to use",
     )
     parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="debug mode",
+    )
+
+    y3_group = parser.add_argument_group("y3")
+    y3_group.add_argument(
         "--y3",
         action="store_true",
         help="use y3-like selection",
     )
-    parser.add_argument(
+    y3_group.add_argument(
         "--complement",
         action="store_true",
         help="use y3-like complement selection",
     )
-    parser.add_argument(
-        "--debug",
+
+    mag_group = parser.add_argument_group("mag")
+    mag_group.add_argument(
+        "--imag",
         action="store_true",
-        help="debug mode",
+        help="apply imag selection",
+    )
+    mag_group.add_argument(
+        "--imag_low",
+        type=float,
+        required=False,
+        default=None,
+        help="lower imag limit",
+    )
+    mag_group.add_argument(
+        "--imag_high",
+        type=float,
+        required=False,
+        default=None,
+        help="upper imag limit",
     )
 
     return parser.parse_args()
 
 
 
-def _compute_nz(cells, zs, weights, responses, zedges=ZEDGES, zbinsc=ZBINSC, y3=False, complement=False):
-    if y3 & complement:
+def _compute_nz(
+    cells,
+    zs,
+    weights,
+    responses,
+    zedges=ZEDGES,
+    zbinsc=ZBINSC,
+    y3=False,
+    complement=False,
+    imag=False,
+    imag_low=None,
+    imag_high=None,
+):
+    if (y3 & complement) | imag:
         tomographic_bins = [-1]
         cell_assignments = {-1: np.array([-1])}
         cell_ids = [-1, 0]
@@ -124,8 +166,19 @@ def _compute_nz(cells, zs, weights, responses, zedges=ZEDGES, zbinsc=ZBINSC, y3=
     return nz
 
 
-def compute_nz(shear_step_plus, shear_step_minus, weight_keys, zedges=ZEDGES, zbinsc=ZBINSC, y3=False, complement=False):
-    if y3 & complement:
+def compute_nz(
+    shear_step_plus,
+    shear_step_minus,
+    weight_keys,
+    zedges=ZEDGES,
+    zbinsc=ZBINSC,
+    y3=False,
+    complement=False,
+    imag=False,
+    imag_low=None,
+    imag_high=None,
+):
+    if (y3 & complement) | imag:
         tomographic_bins = [-1]
     else:
         tomographic_bins = lib.const.TOMOGRAPHIC_BINS
@@ -148,9 +201,15 @@ def compute_nz(shear_step_plus, shear_step_minus, weight_keys, zedges=ZEDGES, zb
             z_plus = z_plus[_sel]
             w_plus = w_plus[_sel]
             response_plus = response_plus[_sel]
-
             if complement:
                 c_plus = -1 * np.ones_like(c_plus)
+        elif imag:
+            _sel = _MAG_CUTS(shear_plus["mdet"]["noshear"], imag_low, imag_high)
+            c_plus = c_plus[_sel]
+            z_plus = z_plus[_sel]
+            w_plus = w_plus[_sel]
+            response_plus = response_plus[_sel]
+            c_plus = -1 * np.ones_like(c_plus)
 
         nz_plus = _compute_nz(
             c_plus,
@@ -161,6 +220,9 @@ def compute_nz(shear_step_plus, shear_step_minus, weight_keys, zedges=ZEDGES, zb
             zbinsc=zbinsc,
             y3=y3,
             complement=complement,
+            imag=imag,
+            imag_low=imag_low,
+            imag_high=imag_high,
         )
 
     with (
@@ -181,9 +243,15 @@ def compute_nz(shear_step_plus, shear_step_minus, weight_keys, zedges=ZEDGES, zb
             z_minus = z_minus[_sel]
             w_minus = w_minus[_sel]
             response_minus = response_minus[_sel]
-
             if complement:
                 c_minus = -1 * np.ones_like(c_minus)
+        elif imag:
+            _sel = _MAG_CUTS(shear_minus["mdet"]["noshear"], imag_low, imag_high)
+            c_minus = c_minus[_sel]
+            z_minus = z_minus[_sel]
+            w_minus = w_minus[_sel]
+            response_minus = response_minus[_sel]
+            c_minus = -1 * np.ones_like(c_minus)
 
         nz_minus = _compute_nz(
             c_minus,
@@ -194,6 +262,9 @@ def compute_nz(shear_step_plus, shear_step_minus, weight_keys, zedges=ZEDGES, zb
             zbinsc=zbinsc,
             y3=y3,
             complement=complement,
+            imag=imag,
+            imag_low=imag_low,
+            imag_high=imag_high,
         )
 
     nz = {}
@@ -230,7 +301,19 @@ def concatenate_catalogs(data):
     return dp, dm
 
 
-def process_file(shear, tomo, weight, tile, weight_keys, tomographic_bin=None, y3=False, complement=False):
+def process_file(
+    shear,
+    tomo,
+    weight,
+    tile,
+    weight_keys,
+    tomographic_bin=None,
+    y3=False,
+    complement=False,
+    imag=False,
+    imag_low=None,
+    imag_high=None,
+):
     res = {}
     for mdet_step in lib.const.MDET_STEPS:
         mdet_cat = shear["mdet"][mdet_step]
@@ -240,18 +323,16 @@ def process_file(shear, tomo, weight, tile, weight_keys, tomographic_bin=None, y
         weight_dataset = weight["mdet"][mdet_step]
         w = get_weight(weight_dataset, weight_keys)
 
-        in_tile = mdet_cat["tilename"][:] == tile
+        sel = (mdet_cat["tilename"][:] == tile)
 
         # in_tomo = bhat[mdet_step] == tomographic_bin
-        if y3 & complement:
-            sel = in_tile
-        else:
-            in_tomo = (tomo["sompz"][mdet_step]["bhat"][:] == tomographic_bin)
-            sel = in_tile & in_tomo
-
         if y3:
-            _y3_sel= _Y3_CUTS(mdet_cat, complement=complement)
-            sel &= _y3_sel
+            sel &= _Y3_CUTS(mdet_cat, complement=complement)
+        elif imag:
+            sel &= _MAG_CUTS(mdet_cat, imag_low, imag_high)
+
+        if not (complement or imag):
+            sel &= (tomo["sompz"][mdet_step]["bhat"][:] == tomographic_bin)
 
         n = np.sum(w[sel])
         if n > 0:
@@ -272,9 +353,49 @@ def process_file(shear, tomo, weight, tile, weight_keys, tomographic_bin=None, y
     return res
 
 
-def process_file_pair(shear_plus, shear_minus, tomo_plus, tomo_minus, weight_plus, weight_minus, weight_keys, *, tile, tomographic_bin=None, y3=False, complement=False):
-    dp = process_file(shear_plus, tomo_plus, weight_plus, tile, weight_keys, tomographic_bin=tomographic_bin, y3=y3, complement=complement)
-    dm = process_file(shear_minus, tomo_minus, weight_minus, tile, weight_keys, tomographic_bin=tomographic_bin, y3=y3, complement=complement)
+def process_file_pair(
+    shear_plus,
+    shear_minus,
+    tomo_plus,
+    tomo_minus,
+    weight_plus,
+    weight_minus,
+    weight_keys,
+    *,
+    tile,
+    tomographic_bin=None,
+    y3=False,
+    complement=False,
+    imag=False,
+    imag_low=None,
+    imag_high=None,
+):
+    dp = process_file(
+        shear_plus,
+        tomo_plus,
+        weight_plus,
+        tile,
+        weight_keys,
+        tomographic_bin=tomographic_bin,
+        y3=y3,
+        complement=complement,
+        imag=imag,
+        imag_low=imag_low,
+        imag_high=imag_high,
+    )
+    dm = process_file(
+        shear_minus,
+        tomo_minus,
+        weight_minus,
+        tile,
+        weight_keys,
+        tomographic_bin=tomographic_bin,
+        y3=y3,
+        complement=complement,
+        imag=imag,
+        imag_low=imag_low,
+        imag_high=imag_high,
+    )
 
     return dp, dm
 
@@ -309,8 +430,20 @@ def compute_shear_pair(dp, dm):
     )
 
 
-def process_pair(shear_step_plus, shear_step_minus, weight_keys, seed=None, resample="jackknife", y3=False, complement=False, debug=False):
-    if y3 & complement:
+def process_pair(
+    shear_step_plus,
+    shear_step_minus,
+    weight_keys,
+    seed=None,
+    resample="jackknife",
+    y3=False,
+    complement=False,
+    imag=False,
+    imag_low=None,
+    imag_high=None,
+    debug=False,
+):
+    if (y3 & complement) | imag:
         tomographic_bins = [-1]
     else:
         tomographic_bins = lib.const.TOMOGRAPHIC_BINS
@@ -333,7 +466,22 @@ def process_pair(shear_step_plus, shear_step_minus, weight_keys, seed=None, resa
     results = {}
     for tomographic_bin in tomographic_bins:
         data = [
-            process_file_pair(shear_plus, shear_minus, tomo_plus, tomo_minus, weight_plus, weight_minus, weight_keys, tile=tile, tomographic_bin=tomographic_bin, y3=y3, complement=complement)
+            process_file_pair(
+                shear_plus,
+                shear_minus,
+                tomo_plus,
+                tomo_minus,
+                weight_plus,
+                weight_minus,
+                weight_keys,
+                tile=tile,
+                tomographic_bin=tomographic_bin,
+                y3=y3,
+                complement=complement,
+                imag=imag,
+                imag_low=imag_low,
+                imag_high=imag_high,
+            )
             for tile in tqdm.tqdm(
                 tilenames,
                 total=ntiles,
@@ -376,19 +524,33 @@ def process_pair(shear_step_plus, shear_step_minus, weight_keys, seed=None, resa
 
 def main():
 
-    # kwargs = {"seed": None, "resample": "jackknife"}
-    # kwargs = {"seed": 42, "resample": "bootstrap"}
     args = get_args()
     print(args)
 
     seed = args.seed
     resample = args.resample
     weights = args.weights
+    debug = args.debug
+    
     y3 = args.y3
     complement = args.complement
-    debug = args.debug
 
-    if y3 & complement:
+    imag = args.imag
+    imag_low = args.imag_low
+    imag_high = args.imag_high
+
+    # require y3 for complement
+    assert y3 or not (y3 ^ complement)
+
+    # require y3 and imag be independent
+    assert not(y3 & imag)
+
+    # require imag, imag_low, imag_high to be all (not) defined
+    assert not(imag) ^ ((imag_low is not None) & (imag_high is not None))
+
+    # global tomographic_bins
+
+    if (y3 & complement) | imag:
         tomographic_bins = [-1]
     else:
         tomographic_bins = lib.const.TOMOGRAPHIC_BINS
@@ -397,10 +559,14 @@ def main():
 
     output_template = "N_gamma_alpha_v3_{}.hdf5"
     output_tag = "-".join(weights)
+
     if y3:
         output_tag += "_y3"
         if complement:
             output_tag += "-complement"
+    elif imag:
+        output_tag += f"_i_{imag_low}_{imag_high}"
+
     output_filename = output_template.format(output_tag)
     print(f"Will write {output_filename}")
 
@@ -466,6 +632,9 @@ def main():
             resample=resample,
             y3=y3,
             complement=complement,
+            imag=imag,
+            imag_low=imag_low,
+            imag_high=imag_high,
             debug=debug,
         )
         # we let alpha=-1 represent the constant shear simulation
@@ -481,6 +650,9 @@ def main():
                 resample=resample,
                 y3=y3,
                 complement=complement,
+                imag=imag,
+                imag_low=imag_low,
+                imag_high=imag_high,
                 debug=debug,
             )
             futures[alpha] = _future
@@ -553,7 +725,18 @@ def main():
 
     # ---
 
-    nz, zedges, zbinsc = compute_nz(shear_constant_step_pair[0], shear_constant_step_pair[1], weight_keys, zedges=ZEDGES, zbinsc=ZBINSC, y3=y3, complement=complement)
+    nz, zedges, zbinsc = compute_nz(
+        shear_constant_step_pair[0],
+        shear_constant_step_pair[1],
+        weight_keys,
+        zedges=ZEDGES,
+        zbinsc=ZBINSC,
+        y3=y3,
+        complement=complement,
+        imag=imag,
+        imag_low=imag_low,
+        imag_high=imag_high,
+    )
 
     with h5py.File(output_filename, "r+") as hf:
         redshift_group = hf.create_group("redshift")

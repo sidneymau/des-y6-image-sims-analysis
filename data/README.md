@@ -14,3 +14,4 @@
 - v3: same as v2 but using averaged diagonal of response
     - y3: y3-like selection
     - y3-complement: complement of y3-like selection; treated as one tomographic bin (index `-1`)
+    - i_X_Y: i-band magnitude limited to X < i <= Y; no tomographic binning applied
