@@ -94,6 +94,49 @@ def read_data(filename):
     return ModelData(z=z, nzs=nzs, mn_pars=mn_pars, zbins=zbins, mn=mn, cov=cov)
 
 
+def read_data_one_tomo_bin(filename):
+    """Read the data from the given filename.
+
+    Parameters
+    ----------
+    filename : str
+        The name of the file to read.
+
+    Returns
+    -------
+    ModelData
+        The data read from the file as a `ModelData` named tuple.
+    """
+    with h5py.File(filename) as d:
+        mn = d["shear/mean"][:].astype(np.float64)
+        cov = d["shear/cov"][:].astype(np.float64)
+        mn_pars = d["shear/mean_params"][:].astype(np.int64)
+        mn_pars[:, 1] = 0
+        mn_pars = tuple(
+            tuple(v) for v in mn_pars.tolist()
+        )
+
+        zbins = []
+        for zbin in range(-1, 10):
+            zbins.append(d[f"alpha/bin{zbin}"][:].astype(np.float64))
+        zbins = np.array(zbins)
+
+        z = d["redshift/zbinsc"][:].astype(np.float64)
+        if np.allclose(z[0], 0.0):
+            cutind = 1
+        else:
+            cutind = 0
+        z = z[cutind:]
+
+        nzs = []
+        for _bin in [-1]:
+            nzs.append(d[f"redshift/bin{_bin}"][:].astype(np.float64))
+            nzs[-1] = nzs[-1][cutind:] / np.sum(nzs[-1][cutind:])
+        nzs = np.array(nzs, dtype=np.float64).reshape((1, -1))
+
+    return ModelData(z=z, nzs=nzs, mn_pars=mn_pars, zbins=zbins, mn=mn, cov=cov)
+
+
 def nz_binned_to_interp(nz, dz=DZ, z0=Z0):
     """Convert the binned n(z) to the linearly interpolated n(z).
 
