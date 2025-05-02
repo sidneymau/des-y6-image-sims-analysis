@@ -112,9 +112,7 @@ def read_data_one_tomo_bin(filename):
         cov = d["shear/cov"][:].astype(np.float64)
         mn_pars = d["shear/mean_params"][:].astype(np.int64)
         mn_pars[:, 1] = 0
-        mn_pars = tuple(
-            tuple(v) for v in mn_pars.tolist()
-        )
+        mn_pars = tuple(tuple(v) for v in mn_pars.tolist())
 
         zbins = []
         for zbin in range(-1, 10):
@@ -821,7 +819,9 @@ def plot_results_fg_model(*, model_module, model_data, map_params=None, samples=
     return fig
 
 
-def measure_m_dz(*, model_module, model_data, samples, return_dict=False, shift_negative=False):
+def measure_m_dz(
+    *, model_module, model_data, samples, return_dict=False, shift_negative=False
+):
     nzs = model_data["nz"]
     n_tomo = nzs.shape[0]
 
