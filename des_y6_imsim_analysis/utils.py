@@ -84,7 +84,7 @@ def read_data(filename):
             cutind = 0
         z = z[cutind:]
 
-        n_tomo = len(list(d["redshift"].keys()))
+        n_tomo = len([k for k in list(d["redshift"].keys()) if k.startswith("bin")])
         nzs = []
         for _bin in range(n_tomo):
             nzs.append(d[f"redshift/bin{_bin}"][:].astype(np.float64))
