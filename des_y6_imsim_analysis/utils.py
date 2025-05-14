@@ -84,12 +84,53 @@ def read_data(filename):
             cutind = 0
         z = z[cutind:]
 
-        n_tomo = len(list(d["redshift"].keys()))
+        n_tomo = len([k for k in list(d["redshift"].keys()) if k.startswith("bin")])
         nzs = []
         for _bin in range(n_tomo):
             nzs.append(d[f"redshift/bin{_bin}"][:].astype(np.float64))
             nzs[-1] = nzs[-1][cutind:] / np.sum(nzs[-1][cutind:])
         nzs = np.array(nzs, dtype=np.float64)
+
+    return ModelData(z=z, nzs=nzs, mn_pars=mn_pars, zbins=zbins, mn=mn, cov=cov)
+
+
+def read_data_one_tomo_bin(filename):
+    """Read the data from the given filename.
+
+    Parameters
+    ----------
+    filename : str
+        The name of the file to read.
+
+    Returns
+    -------
+    ModelData
+        The data read from the file as a `ModelData` named tuple.
+    """
+    with h5py.File(filename) as d:
+        mn = d["shear/mean"][:].astype(np.float64)
+        cov = d["shear/cov"][:].astype(np.float64)
+        mn_pars = d["shear/mean_params"][:].astype(np.int64)
+        mn_pars[:, 1] = 0
+        mn_pars = tuple(tuple(v) for v in mn_pars.tolist())
+
+        zbins = []
+        for zbin in range(-1, 10):
+            zbins.append(d[f"alpha/bin{zbin}"][:].astype(np.float64))
+        zbins = np.array(zbins)
+
+        z = d["redshift/zbinsc"][:].astype(np.float64)
+        if np.allclose(z[0], 0.0):
+            cutind = 1
+        else:
+            cutind = 0
+        z = z[cutind:]
+
+        nzs = []
+        for _bin in [-1]:
+            nzs.append(d[f"redshift/bin{_bin}"][:].astype(np.float64))
+            nzs[-1] = nzs[-1][cutind:] / np.sum(nzs[-1][cutind:])
+        nzs = np.array(nzs, dtype=np.float64).reshape((1, -1))
 
     return ModelData(z=z, nzs=nzs, mn_pars=mn_pars, zbins=zbins, mn=mn, cov=cov)
 
@@ -778,7 +819,9 @@ def plot_results_fg_model(*, model_module, model_data, map_params=None, samples=
     return fig
 
 
-def measure_m_dz(*, model_module, model_data, samples, return_dict=False, shift_negative=False):
+def measure_m_dz(
+    *, model_module, model_data, samples, return_dict=False, shift_negative=False
+):
     nzs = model_data["nz"]
     n_tomo = nzs.shape[0]
 
