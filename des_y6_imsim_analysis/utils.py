@@ -810,6 +810,7 @@ def plot_results_fg_model(*, model_module, model_data, map_params=None, samples=
                     alpha=0.2,
                     color=colors[bi],
                 )
+        ax.legend(loc="ur", frameon=False, ncols=1)
         ax.format(
             xlim=(0, 4.19),
             xlabel="redshift",
