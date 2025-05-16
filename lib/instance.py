@@ -28,8 +28,8 @@ def match(
     zhigh=6.0,
     query_radius_arcsec=1,
 ):
-    if mdet_step != "noshear":
-        raise ValueError(f"only noshear supported")
+    # if mdet_step != "noshear":
+    #     raise ValueError(f"only noshear supported")
 
     wcs = util.load_wcs(tilename)
 
@@ -46,7 +46,7 @@ def match(
     observed_table = {
         key: hf_imsim["mdet"][mdet_step][key][in_tile]
         for key in [
-            "ra", "dec",
+            "ra_noshear", "dec_noshear",
             "pgauss_band_flux_g", "pgauss_band_flux_err_g",
             "pgauss_band_flux_r", "pgauss_band_flux_err_r",
             "pgauss_band_flux_i", "pgauss_band_flux_err_i",
@@ -88,88 +88,94 @@ def match(
 
     observed_points = np.deg2rad(
         np.array([
-            observed_table["ra"],
-            observed_table["dec"],
+            observed_table["ra_noshear"],
+            observed_table["dec_noshear"],
         ]).T
     )
-
-    logger.info("Constructing tree from truth points")
-    bt = BallTree(
-        truth_points,
-        metric="haversine",
-    )
-
-    query_radius = np.deg2rad(query_radius_arcsec / 60 / 60)
-
-    logger.info("Querying tree at observed points with radius {query_radius} rad")
-    indices = bt.query_radius(
-        observed_points,
-        r=query_radius,
-    )
-
-    n_match = sum(map(len, indices))
-
-    if n_match > 0:
-
-        logger.info(f"Sorting matches by Chi^2")
-        _min_chi2_indices = np.array([
-            np.argsort(
-                np.sum(
-                    [
-                        np.square(
-                            np.divide(
-                                np.subtract(
-                                    observed_table[f"pgauss_band_flux_{band}"][_i],
-                                    truth_table[f"flux_{band}"][indices[_i]]
-                                ),
-                                observed_table[f"pgauss_band_flux_err_{band}"][_i]
+    if len(observed_points) > 0:
+    
+        logger.info("Constructing tree from truth points")
+        bt = BallTree(
+            truth_points,
+            metric="haversine",
+        )
+    
+        query_radius = np.deg2rad(query_radius_arcsec / 60 / 60)
+    
+        logger.info("Querying tree at observed points with radius {query_radius} rad")
+        indices = bt.query_radius(
+            observed_points,
+            r=query_radius,
+        )
+    
+        n_match = sum(map(len, indices))
+    
+        if n_match > 0:
+    
+            logger.info(f"Sorting matches by Chi^2")
+            _min_chi2_indices = np.array([
+                np.argsort(
+                    np.sum(
+                        [
+                            np.square(
+                                np.divide(
+                                    np.subtract(
+                                        observed_table[f"pgauss_band_flux_{band}"][_i],
+                                        truth_table[f"flux_{band}"][indices[_i]]
+                                    ),
+                                    observed_table[f"pgauss_band_flux_err_{band}"][_i]
+                                )
                             )
-                        )
-                        for band in const.BANDS
-                    ],
-                    axis=0
-                )
-            )[0] if len(indices[_i]) > 0 else 0
-            for _i in range(len(observed_points))
-        ])
+                            for band in const.BANDS
+                        ],
+                        axis=0
+                    )
+                )[0] if len(indices[_i]) > 0 else 0
+                for _i in range(len(observed_points))
+            ])
+    
+            _observed_matched_indices = np.array([
+                i
+                for (i, _i) in enumerate(indices) if len(_i) > 0
+            ])
+            _truth_matched_indices = np.array([
+                _i[_ii]
+                for (_i, _ii) in zip(indices, _min_chi2_indices) if len(_i) > 0
+            ])
+    
+            # _observed_matched_filter = np.isin(
+            #     np.arange(len(indices)),
+            #     _observed_matched_indices,
+            # )
+    
+            # _truth_matched_filter = np.isin(
+            #     np.arange(len(indices)),
+            #     _truth_matched_indices,
+            # )
+    
+            # assert np.unique(_observed_matched_indices, return_counts=True)[1].max() <= 1
+            # assert len(_truth_matched_indices) == len(_observed_matched_indices)
+    
+            # observed_indices = catalog_indices[in_tile]
+            observed_matched_indices = catalog_indices[in_tile][_observed_matched_indices]
+            truth_matched = truth_table[_truth_matched_indices]
+            # observed_matched_indices = catalog_indices[in_tile][_observed_matched_filter]
+            # truth_matched = truth_table[_truth_matched_filter]
+    
+            # n_unmatched = len(
+            #     np.setdiff1d(
+            #         observed_indices,
+            #         observed_matched_indices,
+            #     )
+            # )
+    
+            return observed_matched_indices, truth_matched
 
-        _observed_matched_indices = np.array([
-            i
-            for (i, _i) in enumerate(indices) if len(_i) > 0
-        ])
-        _truth_matched_indices = np.array([
-            _i[_ii]
-            for (_i, _ii) in zip(indices, _min_chi2_indices) if len(_i) > 0
-        ])
+        # no matches
+        else:
+            return None, None
 
-        # _observed_matched_filter = np.isin(
-        #     np.arange(len(indices)),
-        #     _observed_matched_indices,
-        # )
-
-        # _truth_matched_filter = np.isin(
-        #     np.arange(len(indices)),
-        #     _truth_matched_indices,
-        # )
-
-        # assert np.unique(_observed_matched_indices, return_counts=True)[1].max() <= 1
-        # assert len(_truth_matched_indices) == len(_observed_matched_indices)
-
-        # observed_indices = catalog_indices[in_tile]
-        observed_matched_indices = catalog_indices[in_tile][_observed_matched_indices]
-        truth_matched = truth_table[_truth_matched_indices]
-        # observed_matched_indices = catalog_indices[in_tile][_observed_matched_filter]
-        # truth_matched = truth_table[_truth_matched_filter]
-
-        # n_unmatched = len(
-        #     np.setdiff1d(
-        #         observed_indices,
-        #         observed_matched_indices,
-        #     )
-        # )
-
-        return observed_matched_indices, truth_matched
-
+    # no observed points
     else:
         return None, None
 
