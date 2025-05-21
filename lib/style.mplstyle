@@ -20,10 +20,6 @@ mathtext.default: regular
 
 text.usetex: False
 
-
-# text.usetex: True
-# text.latex.preamble: "\renewcommand*\familydefault{\ttdefault} \usepackage[noendash,LGRgreek]{mathastext} \MTfamily{\ttdefault} \MTgreekfont{\ttdefault} \Mathastext"
-
 axes.formatter.useoffset: False
 # axes.prop_cycle: cycler(color=['black'])
 # axes.prop_cycle: cycler(color=['black']) * cycler(linestyle=['solid', 'dashed', 'dashdot', 'dotted'])

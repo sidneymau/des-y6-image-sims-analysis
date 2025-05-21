@@ -11,7 +11,7 @@ import h5py
 import hpgeom as hpg
 import healsparse
 import yaml
-from scipy import interpolate, signal
+from scipy import interpolate, signal, stats
 
 from esutil.pbar import PBar
 from ngmix.medsreaders import NGMixMEDS
@@ -335,3 +335,53 @@ def rebin(nz):
     redshift_integrated = np.sum(values, axis=1)
 
     return redshift_integrated
+
+
+def get_1d_quantiles(sigmas):
+    # https://en.wikipedia.org/wiki/68%E2%80%9395%E2%80%9399.7_rule
+    _sigmas = np.asarray(sigmas)
+    return stats.norm.cdf(_sigmas) - stats.norm.cdf(_sigmas)
+
+def get_2d_quantiles(sigmas):
+    # https://corner.readthedocs.io/en/latest/pages/sigmas/
+    _sigmas = np.asarray(sigmas)
+    return 1.0 - np.exp(-0.5 * _sigmas ** 2)
+
+
+
+def get_levels(hist, quantiles):
+    assert np.all(np.diff(quantiles) > 0)
+    
+    # flatten histogram
+    _hist_flat = np.ravel(hist)
+    
+    # get indices which sort flattend histogram (highest to lowest)
+    _indices = np.argsort(_hist_flat)[::-1]
+    
+    # get the cumulative sum over these indices
+    _cumulative_sum = np.cumsum(_hist_flat[_indices])
+    
+    # convert cumulative sum to cumulative quantile
+    _cumulative_quantile = _cumulative_sum / _cumulative_sum[-1]
+    
+    # find the left/right indices at which the cumulative quantile exceeds the
+    # desired quantile levels
+    _quantile_indices_left = np.searchsorted(_cumulative_quantile, quantiles, side="left")
+    _quantile_indices_right = np.searchsorted(_cumulative_quantile, quantiles, side="right")
+    
+    # take the average of the hist between the left/right indices to get the values
+    # and return in sorted (lowest to highest) order
+    # _levels = np.sort(
+    #     np.average(
+    #         [
+    #             _hist_flat[_indices[_quantile_indices_left]],
+    #             _hist_flat[_indices[_quantile_indices_right]],
+    #         ],
+    #         axis=0,
+    #     )
+    # )
+    _levels = np.sort(_hist_flat[_indices[_quantile_indices_left]])
+    
+    assert np.all(np.diff(_levels) > 0)
+
+    return _levels

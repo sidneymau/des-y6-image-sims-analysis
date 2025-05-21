@@ -427,6 +427,30 @@ def set_palette(
     return None
 
 
+def sharexy(ax1, ax2):
+    """
+    See https://github.com/matplotlib/matplotlib/blob/v3.10.3/lib/matplotlib/axes/_base.py#L1275-L1311
+    """
+    # ax1.xaxis.major = ax2.yaxis.major  # Ticker instances holding
+    # ax1.xaxis.minor = ax2.yaxis.minor  # locator and formatter.
+    y0, y1 = ax2.get_ylim()
+    ax1.set_xlim(y0, y1, emit=False, auto=ax2.get_autoscaley_on())
+    # ax1.xaxis._scale = ax2.yaxis._scale
+    ax1.set_xscale(ax2.get_yscale())
+
+
+def shareyx(ax1, ax2):
+    """
+    See https://github.com/matplotlib/matplotlib/blob/v3.10.3/lib/matplotlib/axes/_base.py#L1275-L1311
+    """
+    # ax1.yaxis.major = ax2.xaxis.major  # Ticker instances holding
+    # ax1.yaxis.minor = ax2.xaxis.minor  # locator and formatter.
+    x0, x1 = ax2.get_xlim()
+    ax1.set_ylim(x0, x1, emit=False, auto=ax2.get_autoscalex_on())
+    # ax1.yaxis._scale = ax2.xaxis._scale
+    ax1.set_yscale(ax2.get_xscale())
+
+
 #----------------------#
 # Colormaps & Palettes #
 #----------------------#
@@ -546,62 +570,6 @@ def cubehelix_palette(
     return palette
 
 
-_drafter = cubehelix_colormap(
-   start=1,
-   rot=-0.1,
-   gamma=1,
-   hue=0,
-   light=0.85,
-   dark=0.15,
-   name="drafter",
-)
-_drafter_r = _drafter.reversed()
-
-_drafter_reds = cubehelix_colormap(
-   start=1,
-   rot=-0.1,
-   gamma=1,
-   hue=1,
-   light=0.85,
-   dark=0.15,
-   name="drafter_reds",
-)
-_drafter_reds_r = _drafter_reds.reversed()
-
-_drafter_greens = cubehelix_colormap(
-   start=2,
-   rot=-0.1,
-   gamma=1,
-   hue=1,
-   light=0.85,
-   dark=0.15,
-   name="drafter_greens",
-)
-_drafter_greens_r = _drafter_greens.reversed()
-
-_drafter_blues = cubehelix_colormap(
-   start=0,
-   rot=-0.1,
-   gamma=1,
-   hue=1,
-   light=0.85,
-   dark=0.15,
-   name="drafter_blues",
-)
-_drafter_blues_r = _drafter_blues.reversed()
-
-
-
-mpl.colormaps.register(cmap=_drafter)
-mpl.colormaps.register(cmap=_drafter_r)
-mpl.colormaps.register(cmap=_drafter_reds)
-mpl.colormaps.register(cmap=_drafter_reds_r)
-mpl.colormaps.register(cmap=_drafter_greens)
-mpl.colormaps.register(cmap=_drafter_greens_r)
-mpl.colormaps.register(cmap=_drafter_blues)
-mpl.colormaps.register(cmap=_drafter_blues_r)
-
-
 _kwargs = {
     "rot": -0.1,
     "gamma": 1,
@@ -647,3 +615,5 @@ sims_palette = functools.partial(
 
 mdet_color = mdet_palette(3)[1]
 sims_color = sims_palette(3)[1]
+
+
