@@ -28,11 +28,21 @@ ALPHA = {
 }
 ALPHA_BINS = [-1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
 
-MDET_STEPS = ["noshear", "1p", "1m"]
-
 # from Boyan
 ZBINSC = np.arange(0.035, 4, 0.05)
 ZEDGES = np.arange(0.01, 4.02, 0.05)
+
+# tomographic_bins = lib.const.TOMOGRAPHIC_BINS
+
+MATCH_CATALOGS = {
+    shear_step: os.path.join(
+        "/pscratch/sd/s/smau/fiducial-matches-noshear",
+        f"match_{shear_step}.hdf5",
+    )
+    for shear_step in lib.const.SHEAR_STEPS
+}
+
+
 
 def get_args():
     parser = argparse.ArgumentParser()
@@ -41,7 +51,7 @@ def get_args():
         type=int,
         required=False,
         default=None,
-        help="RNG seed [int]",
+        help="RNG seed; only used for bootstrap resampling",
     )
     parser.add_argument(
         "--resample",
@@ -60,30 +70,44 @@ def get_args():
         required=False,
         help="weight keys to use",
     )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="debug mode",
+    )
 
     return parser.parse_args()
 
 
 
-def _compute_nz(cells, zs, weights, responses, zedges=ZEDGES, zbinsc=ZBINSC):
+def _compute_nz(
+    cells,
+    zs,
+    weights,
+    responses,
+    zedges=ZEDGES,
+    zbinsc=ZBINSC,
+):
+    tomographic_bins = ALPHA_BINS
+
     _zs = np.copy(zs)
     _zs[_zs < zbinsc[0]] = zbinsc[0] + 0.001
     _zs[_zs > zbinsc[-1]] = zbinsc[-1] - 0.001
 
-    _nz, _, _, _ = stats.binned_statistic_2d(
-        cells,
-        _zs,
-        weights * responses,
-        statistic="sum",
-        bins=[lib.const.CELL_IDS, zedges],
-    )
-
     nz = {}
-    for tomographic_bin in lib.const.TOMOGRAPHIC_BINS:
-        nz[tomographic_bin] = np.sum(
-            _nz[lib.const.CELL_ASSIGNMENTS[tomographic_bin]],
-            axis=0,
+    for tomographic_bin in tomographic_bins:
+        sel = (
+            (_zs > ALPHA[tomographic_bin][0])
+            & (_zs <= ALPHA[tomographic_bin][1])
         )
+        _nz, _, _ = stats.binned_statistic(
+            _zs[sel],
+            (weights * responses)[sel],
+            statistic="sum",
+            bins=zedges,
+        )
+
+        nz[tomographic_bin] = _nz
 
         # renormalize
         nz[tomographic_bin] = nz[tomographic_bin] / np.sum(nz[tomographic_bin]) / np.diff(zedges)
@@ -91,7 +115,15 @@ def _compute_nz(cells, zs, weights, responses, zedges=ZEDGES, zbinsc=ZBINSC):
     return nz
 
 
-def compute_nz(shear_step_plus, shear_step_minus, weight_keys, zedges=ZEDGES, zbinsc=ZBINSC):
+def compute_nz(
+    shear_step_plus,
+    shear_step_minus,
+    weight_keys,
+    zedges=ZEDGES,
+    zbinsc=ZBINSC,
+):
+    tomographic_bins = ALPHA_BINS
+
     with (
         h5py.File(lib.const.SIM_SHEAR_CATALOGS[shear_step_plus]) as shear_plus,
         h5py.File(lib.const.SIM_MATCH_CATALOGS[shear_step_plus]) as truth_plus,
@@ -135,7 +167,7 @@ def compute_nz(shear_step_plus, shear_step_minus, weight_keys, zedges=ZEDGES, zb
         )
 
     nz = {}
-    for tomographic_bin in lib.const.TOMOGRAPHIC_BINS:
+    for tomographic_bin in tomographic_bins:
         nz[tomographic_bin] = (nz_plus[tomographic_bin] + nz_minus[tomographic_bin]) / 2.
 
     return nz, zedges, zbinsc
@@ -157,36 +189,40 @@ def concatenate_catalogs(data):
         mdet_step: np.hstack(
             [_d[mdet_step] for _d in _dp],
         )
-        for mdet_step in MDET_STEPS
+        for mdet_step in lib.const.MDET_STEPS
     }
     dm = {
         mdet_step: np.hstack(
             [_d[mdet_step] for _d in _dm],
         )
-        for mdet_step in MDET_STEPS
+        for mdet_step in lib.const.MDET_STEPS
     }
     return dp, dm
 
 
-def process_file(shear, match, weight, tile, weight_keys, alpha_bin=None):
+def process_file(
+    shear,
+    match,
+    weight,
+    tile,
+    weight_keys,
+    tomographic_bin=None,
+):
     res = {}
-    for mdet_step in MDET_STEPS:
+    for mdet_step in lib.const.MDET_STEPS:
         mdet_cat = shear["mdet"][mdet_step]
-        match_cat = match["mdet"][mdet_step]
 
         # _w = lib.weight.get_shear_weights(mdet_cat, sel=sel)
         # _w = weight_function(mdet_cat, sel=sel)
         weight_dataset = weight["mdet"][mdet_step]
         w = get_weight(weight_dataset, weight_keys)
 
-        in_tile = mdet_cat["tilename"][:] == tile
+        sel = (mdet_cat["tilename"][:] == tile)
 
-        z = match_cat["z"][:]
-
-        # in_tomo = bhat[mdet_step] == tomographic_bin
-        # in_tomo = (tomo["sompz"][mdet_step]["bhat"][:] == tomographic_bin)
-        in_alpha = (z > ALPHA[alpha_bin][0]) & (z <= ALPHA[alpha_bin][1])
-        sel = in_tile & in_alpha
+        sel &= (
+            (match["mdet"][mdet_step]["z"][:] > ALPHA[tomographic_bin][0])
+            & (match["mdet"][mdet_step]["z"][:] <= ALPHA[tomographic_bin][1])
+        )
 
         n = np.sum(w[sel])
         if n > 0:
@@ -207,9 +243,34 @@ def process_file(shear, match, weight, tile, weight_keys, alpha_bin=None):
     return res
 
 
-def process_file_pair(shear_plus, shear_minus, match_plus, match_minus, weight_plus, weight_minus, weight_keys, *, tile, alpha_bin=None):
-    dp = process_file(shear_plus, match_plus, weight_plus, tile, weight_keys, alpha_bin=alpha_bin)
-    dm = process_file(shear_minus, match_minus, weight_minus, tile, weight_keys, alpha_bin=alpha_bin)
+def process_file_pair(
+    shear_plus,
+    shear_minus,
+    match_plus,
+    match_minus,
+    weight_plus,
+    weight_minus,
+    weight_keys,
+    *,
+    tile,
+    tomographic_bin=None,
+):
+    dp = process_file(
+        shear_plus,
+        match_plus,
+        weight_plus,
+        tile,
+        weight_keys,
+        tomographic_bin=tomographic_bin,
+    )
+    dm = process_file(
+        shear_minus,
+        match_minus,
+        weight_minus,
+        tile,
+        weight_keys,
+        tomographic_bin=tomographic_bin,
+    )
 
     return dp, dm
 
@@ -225,44 +286,68 @@ def compute_shear_pair(dp, dm):
     g1m_m = np.nansum(dm["1m"]["g1"] * dm["1m"]["n"]) / np.nansum(dm["1m"]["n"])
     R11_m = (g1p_m - g1m_m) / 0.02
 
-    # g2_p = np.nansum(dp["noshear"]["g2"] * dp["noshear"]["n"]) / np.nansum(dp["noshear"]["n"])
-    # g2p_p = np.nansum(dp["2p"]["g2"] * dp["2p"]["n"]) / np.nansum(dp["2p"]["n"])
-    # g2m_p = np.nansum(dp["2m"]["g2"] * dp["2m"]["n"]) / np.nansum(dp["2m"]["n"])
-    # R22_p = (g2p_p - g2m_p) / 0.02
+    g2_p = np.nansum(dp["noshear"]["g2"] * dp["noshear"]["n"]) / np.nansum(dp["noshear"]["n"])
+    g2p_p = np.nansum(dp["2p"]["g2"] * dp["2p"]["n"]) / np.nansum(dp["2p"]["n"])
+    g2m_p = np.nansum(dp["2m"]["g2"] * dp["2m"]["n"]) / np.nansum(dp["2m"]["n"])
+    R22_p = (g2p_p - g2m_p) / 0.02
 
-    # g2_m = np.nansum(dm["noshear"]["g2"] * dm["noshear"]["n"]) / np.nansum(dm["noshear"]["n"])
-    # g2p_m = np.nansum(dm["2p"]["g2"] * dm["2p"]["n"]) / np.nansum(dm["2p"]["n"])
-    # g2m_m = np.nansum(dm["2m"]["g2"] * dm["2m"]["n"]) / np.nansum(dm["2m"]["n"])
-    # R22_m = (g2p_m - g2m_m) / 0.02
+    g2_m = np.nansum(dm["noshear"]["g2"] * dm["noshear"]["n"]) / np.nansum(dm["noshear"]["n"])
+    g2p_m = np.nansum(dm["2p"]["g2"] * dm["2p"]["n"]) / np.nansum(dm["2p"]["n"])
+    g2m_m = np.nansum(dm["2m"]["g2"] * dm["2m"]["n"]) / np.nansum(dm["2m"]["n"])
+    R22_m = (g2p_m - g2m_m) / 0.02
+
+    R_p = 0.5 * (R11_p + R22_p)
+    R_m = 0.5 * (R11_m + R22_m)
 
     return (
-        (g1_p / R11_p - g1_m / R11_m), # dg_obs
+        (g1_p / R_p - g1_m / R_m), # dg_obs
         2 * 0.02,      # dg_true
     )
 
 
-def process_pair(shear_step_plus, shear_step_minus, weight_keys, seed=None, resample="jackknife"):
+def process_pair(
+    shear_step_plus,
+    shear_step_minus,
+    weight_keys,
+    seed=None,
+    resample="jackknife",
+    debug=False,
+):
+    tomographic_bins = ALPHA_BINS
+
     shear_plus = h5py.File(lib.const.SIM_SHEAR_CATALOGS[shear_step_plus])
-    match_plus = h5py.File(lib.const.SIM_MATCH_CATALOGS[shear_step_plus])
+    match_plus = h5py.File(MATCH_CATALOGS[shear_step_plus])
     weight_plus = h5py.File(lib.const.SIM_WEIGHT_CATALOGS[shear_step_plus])
 
     shear_minus = h5py.File(lib.const.SIM_SHEAR_CATALOGS[shear_step_minus])
-    match_minus = h5py.File(lib.const.SIM_MATCH_CATALOGS[shear_step_minus])
+    match_minus = h5py.File(MATCH_CATALOGS[shear_step_minus])
     weight_minus = h5py.File(lib.const.SIM_WEIGHT_CATALOGS[shear_step_minus])
 
     tilenames_p = np.unique(shear_plus["mdet"]["noshear"]["tilename"][:])
     tilenames_m = np.unique(shear_minus["mdet"]["noshear"]["tilename"][:])
     tilenames = np.intersect1d(tilenames_p, tilenames_m)
+    if debug:
+        tilenames = tilenames[:10]
     ntiles = len(tilenames)
 
     results = {}
-    for alpha_bin in ALPHA_BINS:
+    for tomographic_bin in tomographic_bins:
         data = [
-            process_file_pair(shear_plus, shear_minus, match_plus, match_minus, weight_plus, weight_minus, weight_keys, tile=tile, alpha_bin=alpha_bin)
+            process_file_pair(
+                shear_plus,
+                shear_minus,
+                match_plus,
+                match_minus,
+                weight_plus,
+                weight_minus,
+                weight_keys,
+                tile=tile,
+                tomographic_bin=tomographic_bin,
+            )
             for tile in tqdm.tqdm(
                 tilenames,
                 total=ntiles,
-                desc=f"processing {alpha_bin}",
+                desc=f"processing {tomographic_bin}",
                 ncols=80,
             )
         ]
@@ -280,7 +365,7 @@ def process_pair(shear_step_plus, shear_step_minus, weight_keys, seed=None, resa
                 _dg_obs, _dg_true = compute_shear_pair(_dp, _dm)
                 bootstrap.append(_dg_obs / _dg_true)
 
-            results[alpha_bin] = np.array(bootstrap)
+            results[tomographic_bin] = np.array(bootstrap)
 
         elif resample == "jackknife":
             jackknife = []
@@ -294,25 +379,32 @@ def process_pair(shear_step_plus, shear_step_minus, weight_keys, seed=None, resa
                 _dg_obs, _dg_true = compute_shear_pair(_dp, _dm)
                 jackknife.append(_dg_obs / _dg_true)
 
-            results[alpha_bin] = np.array(jackknife)
+            results[tomographic_bin] = np.array(jackknife)
 
     return results
 
 
 def main():
 
-    # kwargs = {"seed": None, "resample": "jackknife"}
-    # kwargs = {"seed": 42, "resample": "bootstrap"}
     args = get_args()
+    print(args)
 
     seed = args.seed
     resample = args.resample
     weights = args.weights
+    debug = args.debug
+
+    tomographic_bins = ALPHA_BINS
 
     weight_keys = [f"{weight}_weight" for weight in weights]
 
-    output_template = "N_gamma_alpha_{}_true_z.hdf5"
-    output_filename = output_template.format("-".join(weights))
+    output_template = "N_gamma_alpha_v3_{}.hdf5"
+    output_tag = "-".join(weights)
+
+    output_tag += "_true-tomo"
+
+    output_filename = output_template.format(output_tag)
+    print(f"Will write {output_filename}")
 
     shear_constant_step_pair = (
         "g1_slice=0.02__g2_slice=0.00__g1_other=0.00__g2_other=0.00__zlow=0.0__zhigh=6.0",
@@ -363,7 +455,6 @@ def main():
     ]
 
     print(f"Processing with weights: {weights}")
-    
 
     results = {}
     futures = {}
@@ -375,6 +466,7 @@ def main():
             weight_keys,
             seed=seed,
             resample=resample,
+            debug=debug,
         )
         # we let alpha=-1 represent the constant shear simulation
         futures[-1] = _future
@@ -387,13 +479,14 @@ def main():
                 weight_keys,
                 seed=seed,
                 resample=resample,
+                debug=debug,
             )
             futures[alpha] = _future
 
         for alpha, future in futures.items():
             results[alpha] = future.result()
 
-    xi = list(itertools.product(ALPHA_BINS, ALPHA_BINS))
+    xi = list(itertools.product(ALPHA_BINS, tomographic_bins))
     mean_params = np.array(xi)
     cov = list(itertools.product(xi, xi))
     cov_params = np.array(cov).reshape(len(xi), len(xi), 2, 2)
@@ -458,14 +551,20 @@ def main():
 
     # ---
 
-    nz, zedges, zbinsc = compute_nz(shear_constant_step_pair[0], shear_constant_step_pair[1], weight_keys, zedges=ZEDGES, zbinsc=ZBINSC)
+    nz, zedges, zbinsc = compute_nz(
+        shear_constant_step_pair[0],
+        shear_constant_step_pair[1],
+        weight_keys,
+        zedges=ZEDGES,
+        zbinsc=ZBINSC,
+    )
 
     with h5py.File(output_filename, "r+") as hf:
         redshift_group = hf.create_group("redshift")
         redshift_group.create_dataset("zedges", data=zedges)
         redshift_group.create_dataset("zbinsc", data=zbinsc)
 
-        for tomographic_bin in lib.const.TOMOGRAPHIC_BINS:
+        for tomographic_bin in tomographic_bins:
             groupname = f"bin{tomographic_bin}"
             redshift_group.create_dataset(groupname, data=nz[tomographic_bin])
 
