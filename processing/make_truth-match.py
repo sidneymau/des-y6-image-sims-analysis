@@ -15,6 +15,7 @@ COLUMNS = [
     "ra",
     "dec",
     "z",
+    "cat_index_sim",
 ]
 
 for band in lib.const.BANDS:
@@ -97,6 +98,7 @@ def _main(catalog, shear_step):
                         hf["mdet"][mdet_step]["dec"][observed_matched_indices] = hf_imsim["mdet"][mdet_step]["dec"][observed_matched_indices]
 
                         hf["mdet"][mdet_step]["z"][observed_matched_indices] = truth_matched_table["photoz"]
+                        hf["mdet"][mdet_step]["cat_index_sim"][observed_matched_indices] = truth_matched_table["cat_index_sim"]
 
 
                         for i, band in enumerate(lib.const.DEEPFIELD_BANDS):
@@ -122,16 +124,11 @@ def main():
         for shear_step in lib.const.SHEAR_STEPS
     }
 
-    # n_jobs = len(lib.const.SHEAR_STEPS)
-    n_jobs = 2
+    n_jobs = len(lib.const.SHEAR_STEPS)
     with concurrent.futures.ProcessPoolExecutor(n_jobs) as executor:
         for shear_step, catalog in IMSIM_CATALOGS.items():
-            if shear_step in [
-                "g1_slice=-0.02__g2_slice=0.00__g1_other=0.00__g2_other=0.00__zlow=0.0__zhigh=6.0",
-                "g1_slice=0.02__g2_slice=0.00__g1_other=-0.02__g2_other=0.00__zlow=2.4__zhigh=2.7",
-            ]:
-                future = executor.submit(_main, catalog, shear_step)
-                futures[shear_step] = future
+            future = executor.submit(_main, catalog, shear_step)
+            futures[shear_step] = future
 
     for shear_step, future in futures.items():
         print(f"{shear_step}: exited with status {future.result()}")
