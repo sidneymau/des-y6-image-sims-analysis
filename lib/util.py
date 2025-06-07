@@ -13,10 +13,6 @@ import healsparse
 import yaml
 from scipy import interpolate, signal, stats
 
-from esutil.pbar import PBar
-from ngmix.medsreaders import NGMixMEDS
-from pizza_cutter_metadetect.masks import get_slice_bounds
-
 from . import const
 
 
@@ -172,6 +168,10 @@ def load_mdet_mask(fname="/dvs_ro/cfs/cdirs/des/y6-shear-catalogs/y6-combined-hl
 
 
 def read_meds(fname):
+    from ngmix.medsreaders import NGMixMEDS
+    from pizza_cutter_metadetect.masks import get_slice_bounds
+    from esutil.pbar import PBar
+    
     coadd_dims = (10_000, 10_000)
 
     m = NGMixMEDS(fname)
