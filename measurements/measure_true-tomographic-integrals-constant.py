@@ -34,28 +34,14 @@ ZEDGES = np.arange(0.01, 4.02, 0.05)
 
 # tomographic_bins = lib.const.TOMOGRAPHIC_BINS
 
-SIM_MATCH_CATALOGS = {
+MATCH_CATALOGS = {
     shear_step: os.path.join(
         "/pscratch/sd/s/smau/fiducial-matches-noshear",
         f"match_{shear_step}.hdf5",
     )
     for shear_step in lib.const.SHEAR_STEPS
 }
-SIM_PURE_CATALOGS = {
-    shear_step: os.path.join(
-        "/pscratch/sd/s/smau/fiducial-matches-noshear",
-        f"pure_{shear_step}.hdf5",
-    )
-    for shear_step in lib.const.SHEAR_STEPS
-}
 
-
-def _COLOR_CUTS(d, dc):
-    return (
-        np.abs(
-            lib.const.GI_COLOR - (lib.util.flux_to_mag(d["pgauss_band_flux_g"]) - lib.util.flux_to_mag(d["pgauss_band_flux_i"]))
-        ) < dc
-    )
 
 
 def get_args():
@@ -88,17 +74,6 @@ def get_args():
         "--debug",
         action="store_true",
         help="debug mode",
-    )
-    parser.add_argument(
-        "--decontaminate",
-        action="store_true",
-        help="debug mode",
-    )
-    parser.add_argument(
-        "--dc",
-        type=float,
-        required=False,
-        default=None,
     )
 
     return parser.parse_args()
@@ -146,15 +121,12 @@ def compute_nz(
     weight_keys,
     zedges=ZEDGES,
     zbinsc=ZBINSC,
-    decontaminate=False,
-    dc=None,
 ):
     tomographic_bins = ALPHA_BINS
 
     with (
         h5py.File(lib.const.SIM_SHEAR_CATALOGS[shear_step_plus]) as shear_plus,
-        h5py.File(SIM_MATCH_CATALOGS[shear_step_plus]) as truth_plus,
-        h5py.File(SIM_PURE_CATALOGS[shear_step_plus]) as pure_plus,
+        h5py.File(lib.const.SIM_MATCH_CATALOGS[shear_step_plus]) as truth_plus,
         h5py.File(lib.const.SIM_TOMOGRAPHY_CATALOGS[shear_step_plus]) as tomo_plus,
         h5py.File(lib.const.SIM_WEIGHT_CATALOGS[shear_step_plus]) as weight_plus,
     ):
@@ -164,26 +136,18 @@ def compute_nz(
         w_plus = get_weight(weight_plus["mdet"]["noshear"], weight_keys=weight_keys)
         response_plus = lib.response.get_shear_response(shear_plus["mdet"]["noshear"])
 
-        if decontaminate:
-            sel = (pure_plus["mdet"]["noshear"]["pure"][:] == 1)
-        elif dc is not None:
-            sel = _COLOR_CUTS(shear_plus["mdet"]["noshear"], dc)
-        else:
-            sel = slice(None)
-
         nz_plus = _compute_nz(
-            c_plus[sel],
-            z_plus[sel],
-            w_plus[sel],
-            response_plus[sel],
+            c_plus,
+            z_plus,
+            w_plus,
+            response_plus,
             zedges=zedges,
             zbinsc=zbinsc,
         )
 
     with (
         h5py.File(lib.const.SIM_SHEAR_CATALOGS[shear_step_minus]) as shear_minus,
-        h5py.File(SIM_MATCH_CATALOGS[shear_step_minus]) as truth_minus,
-        h5py.File(SIM_PURE_CATALOGS[shear_step_minus]) as pure_minus,
+        h5py.File(lib.const.SIM_MATCH_CATALOGS[shear_step_minus]) as truth_minus,
         h5py.File(lib.const.SIM_TOMOGRAPHY_CATALOGS[shear_step_minus]) as tomo_minus,
         h5py.File(lib.const.SIM_WEIGHT_CATALOGS[shear_step_minus]) as weight_minus,
     ):
@@ -193,18 +157,11 @@ def compute_nz(
         w_minus = get_weight(weight_minus["mdet"]["noshear"], weight_keys=weight_keys)
         response_minus = lib.response.get_shear_response(shear_minus["mdet"]["noshear"])
 
-        if decontaminate:
-            sel = (pure_minus["mdet"]["noshear"]["pure"][:] == 1)
-        elif dc is not None:
-            sel = _COLOR_CUTS(shear_minus["mdet"]["noshear"], dc)
-        else:
-            sel = slice(None)
-
         nz_minus = _compute_nz(
-            c_minus[sel],
-            z_minus[sel],
-            w_minus[sel],
-            response_minus[sel],
+            c_minus,
+            z_minus,
+            w_minus,
+            response_minus,
             zedges=zedges,
             zbinsc=zbinsc,
         )
@@ -246,13 +203,10 @@ def concatenate_catalogs(data):
 def process_file(
     shear,
     match,
-    pure,
     weight,
     tile,
     weight_keys,
     tomographic_bin=None,
-    decontaminate=False,
-    dc=None,
 ):
     res = {}
     for mdet_step in lib.const.MDET_STEPS:
@@ -264,11 +218,6 @@ def process_file(
         w = get_weight(weight_dataset, weight_keys)
 
         sel = (mdet_cat["tilename"][:] == tile)
-
-        if decontaminate:
-            sel &= (pure["mdet"][mdet_step]["pure"][:] == 1)
-        elif dc is not None:
-            sel &= _COLOR_CUTS(mdet_cat, dc)
 
         sel &= (
             (match["mdet"][mdet_step]["z"][:] > ALPHA[tomographic_bin][0])
@@ -299,38 +248,28 @@ def process_file_pair(
     shear_minus,
     match_plus,
     match_minus,
-    pure_plus,
-    pure_minus,
     weight_plus,
     weight_minus,
     weight_keys,
     *,
     tile,
     tomographic_bin=None,
-    decontaminate=False,
-    dc=None,
 ):
     dp = process_file(
         shear_plus,
         match_plus,
-        pure_plus,
         weight_plus,
         tile,
         weight_keys,
         tomographic_bin=tomographic_bin,
-        decontaminate=decontaminate,
-        dc=dc,
     )
     dm = process_file(
         shear_minus,
         match_minus,
-        pure_minus,
         weight_minus,
         tile,
         weight_keys,
         tomographic_bin=tomographic_bin,
-        decontaminate=decontaminate,
-        dc=dc,
     )
 
     return dp, dm
@@ -370,21 +309,18 @@ def process_pair(
     shear_step_plus,
     shear_step_minus,
     weight_keys,
-    tomographic_bin,
     seed=None,
     resample="jackknife",
     debug=False,
-    decontaminate=False,
-    dc=None,
 ):
+    tomographic_bins = ALPHA_BINS
+
     shear_plus = h5py.File(lib.const.SIM_SHEAR_CATALOGS[shear_step_plus])
-    match_plus = h5py.File(SIM_MATCH_CATALOGS[shear_step_plus])
-    pure_plus = h5py.File(SIM_PURE_CATALOGS[shear_step_plus])
+    match_plus = h5py.File(MATCH_CATALOGS[shear_step_plus])
     weight_plus = h5py.File(lib.const.SIM_WEIGHT_CATALOGS[shear_step_plus])
 
     shear_minus = h5py.File(lib.const.SIM_SHEAR_CATALOGS[shear_step_minus])
-    match_minus = h5py.File(SIM_MATCH_CATALOGS[shear_step_minus])
-    pure_minus = h5py.File(SIM_PURE_CATALOGS[shear_step_minus])
+    match_minus = h5py.File(MATCH_CATALOGS[shear_step_minus])
     weight_minus = h5py.File(lib.const.SIM_WEIGHT_CATALOGS[shear_step_minus])
 
     tilenames_p = np.unique(shear_plus["mdet"]["noshear"]["tilename"][:])
@@ -394,55 +330,57 @@ def process_pair(
         tilenames = tilenames[:10]
     ntiles = len(tilenames)
 
-    data = [
-        process_file_pair(
-            shear_plus,
-            shear_minus,
-            match_plus,
-            match_minus,
-            pure_plus,
-            pure_minus,
-            weight_plus,
-            weight_minus,
-            weight_keys,
-            tile=tile,
-            tomographic_bin=tomographic_bin,
-            decontaminate=decontaminate,
-            dc=dc,
-        )
-        for tile in tilenames
-    ]
-    data = np.array(data)
+    results = {}
+    for tomographic_bin in tomographic_bins:
+        data = [
+            process_file_pair(
+                shear_plus,
+                shear_minus,
+                match_plus,
+                match_minus,
+                weight_plus,
+                weight_minus,
+                weight_keys,
+                tile=tile,
+                tomographic_bin=tomographic_bin,
+            )
+            for tile in tqdm.tqdm(
+                tilenames,
+                total=ntiles,
+                desc=f"processing {tomographic_bin}",
+                ncols=80,
+            )
+        ]
+        data = np.array(data)
 
-    if resample == "bootstrap":
-        ns = 1000  # number of bootstrap resamples
-        rng = np.random.RandomState(seed=seed)
+        if resample == "bootstrap":
+            ns = 1000  # number of bootstrap resamples
+            rng = np.random.RandomState(seed=seed)
 
-        bootstrap = []
-        for i in range(ns):
-            rind = rng.choice(len(data), size=len(data), replace=True)
-            _bootstrap = data[rind]
-            _dp, _dm = concatenate_catalogs(_bootstrap)
-            _dg_obs, _dg_true = compute_shear_pair(_dp, _dm)
-            bootstrap.append(_dg_obs / _dg_true)
+            bootstrap = []
+            for i in tqdm.trange(ns, desc="bootstrap", ncols=80):
+                rind = rng.choice(len(data), size=len(data), replace=True)
+                _bootstrap = data[rind]
+                _dp, _dm = concatenate_catalogs(_bootstrap)
+                _dg_obs, _dg_true = compute_shear_pair(_dp, _dm)
+                bootstrap.append(_dg_obs / _dg_true)
 
-        results = np.array(bootstrap)
+            results[tomographic_bin] = np.array(bootstrap)
 
-    elif resample == "jackknife":
-        jackknife = []
-        for i in range(len(data)):
-            _pre = data[:i]
-            _post = data[i + 1:]
-            # _jackknife = _pre + _post
-            _jackknife = np.concatenate([_pre, _post])
-            _dp, _dm = concatenate_catalogs(_jackknife)
-            # jackknife.append(compute_shear_pair(_dp, _dm))
-            _dg_obs, _dg_true = compute_shear_pair(_dp, _dm)
-            jackknife.append(_dg_obs / _dg_true)
+        elif resample == "jackknife":
+            jackknife = []
+            for i in tqdm.trange(len(data), desc="jackknife", ncols=80):
+                _pre = data[:i]
+                _post = data[i + 1:]
+                # _jackknife = _pre + _post
+                _jackknife = np.concatenate([_pre, _post])
+                _dp, _dm = concatenate_catalogs(_jackknife)
+                # jackknife.append(compute_shear_pair(_dp, _dm))
+                _dg_obs, _dg_true = compute_shear_pair(_dp, _dm)
+                jackknife.append(_dg_obs / _dg_true)
 
-        results = np.array(jackknife)
+            results[tomographic_bin] = np.array(jackknife)
 
-    print(f"done processing {shear_step_plus}, {shear_step_minus}, {tomographic_bin}")
     return results
 
 
@@ -455,8 +393,6 @@ def main():
     resample = args.resample
     weights = args.weights
     debug = args.debug
-    decontaminate = args.decontaminate
-    dc = args.dc
 
     tomographic_bins = ALPHA_BINS
 
@@ -465,12 +401,7 @@ def main():
     output_template = "N_gamma_alpha_v3_{}.hdf5"
     output_tag = "-".join(weights)
 
-    output_tag += "_true-tomo"
-
-    if decontaminate:
-        output_tag += "_pure"
-    if dc is not None:
-        output_tag += f"_dc={dc}"
+    output_tag += "_true-tomo-constant"
 
     output_filename = output_template.format(output_tag)
     print(f"Will write {output_filename}")
@@ -482,43 +413,43 @@ def main():
 
     shear_step_pairs = [
         (
-            "g1_slice=0.02__g2_slice=0.00__g1_other=-0.02__g2_other=0.00__zlow=0.0__zhigh=0.3",
+            "g1_slice=0.02__g2_slice=0.00__g1_other=0.00__g2_other=0.00__zlow=0.0__zhigh=6.0",
             "g1_slice=-0.02__g2_slice=0.00__g1_other=0.00__g2_other=0.00__zlow=0.0__zhigh=6.0"
         ),
         (
-            "g1_slice=0.02__g2_slice=0.00__g1_other=-0.02__g2_other=0.00__zlow=0.3__zhigh=0.6",
+            "g1_slice=0.02__g2_slice=0.00__g1_other=0.00__g2_other=0.00__zlow=0.0__zhigh=6.0",
             "g1_slice=-0.02__g2_slice=0.00__g1_other=0.00__g2_other=0.00__zlow=0.0__zhigh=6.0"
         ),
         (
-            "g1_slice=0.02__g2_slice=0.00__g1_other=-0.02__g2_other=0.00__zlow=0.6__zhigh=0.9",
+            "g1_slice=0.02__g2_slice=0.00__g1_other=0.00__g2_other=0.00__zlow=0.0__zhigh=6.0",
             "g1_slice=-0.02__g2_slice=0.00__g1_other=0.00__g2_other=0.00__zlow=0.0__zhigh=6.0"
         ),
         (
-            "g1_slice=0.02__g2_slice=0.00__g1_other=-0.02__g2_other=0.00__zlow=0.9__zhigh=1.2",
+            "g1_slice=0.02__g2_slice=0.00__g1_other=0.00__g2_other=0.00__zlow=0.0__zhigh=6.0",
             "g1_slice=-0.02__g2_slice=0.00__g1_other=0.00__g2_other=0.00__zlow=0.0__zhigh=6.0"
         ),
         (
-            "g1_slice=0.02__g2_slice=0.00__g1_other=-0.02__g2_other=0.00__zlow=1.2__zhigh=1.5",
+            "g1_slice=0.02__g2_slice=0.00__g1_other=0.00__g2_other=0.00__zlow=0.0__zhigh=6.0",
             "g1_slice=-0.02__g2_slice=0.00__g1_other=0.00__g2_other=0.00__zlow=0.0__zhigh=6.0"
         ),
         (
-            "g1_slice=0.02__g2_slice=0.00__g1_other=-0.02__g2_other=0.00__zlow=1.5__zhigh=1.8",
+            "g1_slice=0.02__g2_slice=0.00__g1_other=0.00__g2_other=0.00__zlow=0.0__zhigh=6.0",
             "g1_slice=-0.02__g2_slice=0.00__g1_other=0.00__g2_other=0.00__zlow=0.0__zhigh=6.0"
         ),
         (
-            "g1_slice=0.02__g2_slice=0.00__g1_other=-0.02__g2_other=0.00__zlow=1.8__zhigh=2.1",
+            "g1_slice=0.02__g2_slice=0.00__g1_other=0.00__g2_other=0.00__zlow=0.0__zhigh=6.0",
             "g1_slice=-0.02__g2_slice=0.00__g1_other=0.00__g2_other=0.00__zlow=0.0__zhigh=6.0"
         ),
         (
-            "g1_slice=0.02__g2_slice=0.00__g1_other=-0.02__g2_other=0.00__zlow=2.1__zhigh=2.4",
+            "g1_slice=0.02__g2_slice=0.00__g1_other=0.00__g2_other=0.00__zlow=0.0__zhigh=6.0",
             "g1_slice=-0.02__g2_slice=0.00__g1_other=0.00__g2_other=0.00__zlow=0.0__zhigh=6.0"
         ),
         (
-            "g1_slice=0.02__g2_slice=0.00__g1_other=-0.02__g2_other=0.00__zlow=2.4__zhigh=2.7",
+            "g1_slice=0.02__g2_slice=0.00__g1_other=0.00__g2_other=0.00__zlow=0.0__zhigh=6.0",
             "g1_slice=-0.02__g2_slice=0.00__g1_other=0.00__g2_other=0.00__zlow=0.0__zhigh=6.0"
         ),
         (
-            "g1_slice=0.02__g2_slice=0.00__g1_other=-0.02__g2_other=0.00__zlow=2.7__zhigh=6.0",
+            "g1_slice=0.02__g2_slice=0.00__g1_other=0.00__g2_other=0.00__zlow=0.0__zhigh=6.0",
             "g1_slice=-0.02__g2_slice=0.00__g1_other=0.00__g2_other=0.00__zlow=0.0__zhigh=6.0"
         ),
     ]
@@ -527,50 +458,33 @@ def main():
 
     results = {}
     futures = {}
-    futures[-1] = {}
-    results[-1] = {}
-    for alpha in range(len(shear_step_pairs)):
-        futures[alpha] = {}
-        results[alpha] = {}
-        for tomographic_bin in tomographic_bins:
-            futures[alpha][tomographic_bin] = {}
-            results[alpha][tomographic_bin] = {}
-
-    with concurrent.futures.ProcessPoolExecutor(max_workers=min(64, (len(shear_step_pairs) + 1) * len(tomographic_bins))) as executor:
+    with concurrent.futures.ProcessPoolExecutor(max_workers=min(32, len(shear_step_pairs) + 1)) as executor:
         # constant shear
-        for tomographic_bin in tomographic_bins:
+        _future = executor.submit(
+            process_pair,
+            *shear_constant_step_pair,
+            weight_keys,
+            seed=seed,
+            resample=resample,
+            debug=debug,
+        )
+        # we let alpha=-1 represent the constant shear simulation
+        futures[-1] = _future
+
+        # redshift-dependent shear
+        for alpha, shear_step_pair in enumerate(shear_step_pairs):
             _future = executor.submit(
                 process_pair,
-                *shear_constant_step_pair,
+                *shear_step_pair,
                 weight_keys,
-                tomographic_bin,
                 seed=seed,
                 resample=resample,
                 debug=debug,
-                decontaminate=decontaminate,
-                dc=dc,
             )
-            # we let alpha=-1 represent the constant shear simulation
-            futures[-1][tomographic_bin] = _future
+            futures[alpha] = _future
 
-            # redshift-dependent shear
-            for alpha, shear_step_pair in enumerate(shear_step_pairs):
-                _future = executor.submit(
-                    process_pair,
-                    *shear_step_pair,
-                    weight_keys,
-                    tomographic_bin,
-                    seed=seed,
-                    resample=resample,
-                    debug=debug,
-                    decontaminate=decontaminate,
-                    dc=dc,
-                )
-                futures[alpha][tomographic_bin] = _future
-
-        for tomographic_bin, _futures in futures.items():
-            for alpha, future in _futures.items():
-                results[alpha][tomographic_bin] = future.result()
+        for alpha, future in futures.items():
+            results[alpha] = future.result()
 
     xi = list(itertools.product(ALPHA_BINS, tomographic_bins))
     mean_params = np.array(xi)
@@ -643,8 +557,6 @@ def main():
         weight_keys,
         zedges=ZEDGES,
         zbinsc=ZBINSC,
-        decontaminate=decontaminate,
-        dc=dc,
     )
 
     with h5py.File(output_filename, "r+") as hf:
